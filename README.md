@@ -27,6 +27,25 @@ Change the port with the `PORT` env var:
 PORT=3000 node server.mjs
 ```
 
+## Shortcuts (Windows)
+
+For one-double-click access, create Desktop and Start Menu shortcuts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install-shortcut.ps1
+```
+
+This drops a **YTS Library** shortcut (with a generated icon) on your Desktop and
+in the Start Menu (searchable by typing "YTS"; right-click it there to pin to
+Start or the taskbar). Double-clicking it runs `launch.ps1`, which:
+
+1. starts the server if it isn't already running (in a minimized
+   *YTS Library Server* window), then
+2. opens <http://localhost:8080> in your default browser.
+
+**To stop the app,** close the minimized *YTS Library Server* window. Re-run
+`install-shortcut.ps1` if you ever move the project folder.
+
 ## How it works
 
 ```
