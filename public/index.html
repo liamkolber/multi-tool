@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YTS Library Browser</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">🎬</span>
+        <span class="brand-name">YTS Library</span>
+      </div>
+
+      <div class="search">
+        <input
+          id="search"
+          type="search"
+          placeholder="Search by title, actor, director, or IMDb code…"
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+    </div>
+
+    <div class="filters">
+      <label class="field">
+        <span>Quality</span>
+        <select id="quality"></select>
+      </label>
+      <label class="field">
+        <span>Genre</span>
+        <select id="genre"></select>
+      </label>
+      <label class="field">
+        <span>Min rating</span>
+        <select id="rating"></select>
+      </label>
+      <label class="field">
+        <span>Sort by</span>
+        <select id="sort"></select>
+      </label>
+      <label class="field">
+        <span>Order</span>
+        <select id="order"></select>
+      </label>
+      <button id="reset" class="btn-ghost" type="button" title="Reset all filters">Reset</button>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="results-bar">
+      <span id="results-info" class="results-info">Loading…</span>
+    </div>
+
+    <div id="grid" class="grid" aria-live="polite"></div>
+
+    <div id="status" class="status" hidden></div>
+
+    <nav class="pager" aria-label="Pagination">
+      <button id="prev" class="btn" type="button">‹ Prev</button>
+      <span id="page-info" class="page-info">Page 1</span>
+      <button id="next" class="btn" type="button">Next ›</button>
+    </nav>
+  </main>
+
+  <!-- Movie detail modal -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal-close" data-close aria-label="Close">✕</button>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

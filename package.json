@@ -1,0 +1,14 @@
+{
+  "name": "yts-library-browser",
+  "version": "1.0.0",
+  "description": "A local web app to browse the YTS movie library via its public API",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}
