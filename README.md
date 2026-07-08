@@ -75,7 +75,8 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
 
 - 🔍 One search box across movies/TV **and** anime, with an All / Movies & TV /
   Anime / ★ Watchlist toggle
-- 🎚️ Movie filters (quality, genre, rating, sort) and anime filters (genre,
+- 🎚️ Movie filters (quality, **popular: all-time / this-year**, genre, rating,
+  sort) and anime filters (genre,
   **tag** (AniList's full tag set, grouped by category), format,
   **status incl. "Airing now"**, **audience (all-ages / 18+ / all)**, score,
   sort), plus a **▶ Streamable** toggle (only titles with an official streaming

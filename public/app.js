@@ -23,6 +23,9 @@ const MOVIE_SORTS = [
   ['like_count', 'Likes'], ['rating', 'Rating'], ['year', 'Year'],
   ['title', 'Title'], ['peers', 'Peers'], ['seeds', 'Seeds'],
 ];
+// YTS only exposes all-time download counts (no monthly stats); "This year"
+// works by using the year as the search term, then sorting by downloads.
+const MOVIE_POPULAR = [['off', '—'], ['all', 'All time'], ['year', 'This year']];
 const ANIME_SORTS = [
   ['popularity', 'Popularity'], ['trending', 'Trending'], ['score', 'Top rated'],
   ['newest', 'Newest'], ['title', 'Title'],
@@ -71,7 +74,7 @@ const state = {
   source: 'all', // all | movies | anime | watchlist
   page: 1,
   // movie filters
-  quality: 'All', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
+  quality: 'All', moviePopular: 'off', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
   // anime filters
   animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity', audience: 'sfw',
   // shared — grouping is on by default; the pill toggles it off
@@ -89,6 +92,7 @@ const els = {
   search: $('search'),
   sourceToggle: $('source-toggle'),
   quality: $('quality'),
+  moviePopular: $('movie-popular'),
   genre: $('genre'),
   tagSel: $('anime-tag'),
   format: $('format'),
@@ -205,6 +209,7 @@ function bookmarkBtn(source, id) {
 // --- Populate filter controls ---
 function buildStaticControls() {
   QUALITIES.forEach((q) => els.quality.append(option(q, q, q === 'All')));
+  MOVIE_POPULAR.forEach(([v, label]) => els.moviePopular.append(option(v, label, v === 'off')));
   FORMATS.forEach(([v, label]) => els.format.append(option(v, label, v === 'All')));
   STATUSES.forEach(([v, label]) => els.statusSel.append(option(v, label, v === 'All')));
   AUDIENCES.forEach(([v, label]) => els.audience.append(option(v, label, v === 'sfw')));
@@ -432,6 +437,12 @@ async function fetchMovies(limit) {
   if (state.source === 'movies') {
     if (state.quality !== 'All') p.set('quality', state.quality);
     if (state.movieGenre !== 'All') p.set('genre', state.movieGenre);
+    if (state.moviePopular !== 'off') {
+      // YTS popularity = all-time download_count; "this year" via year-as-query.
+      p.set('sort_by', 'download_count');
+      p.set('order_by', 'desc');
+      if (state.moviePopular === 'year') p.set('query_term', String(new Date().getFullYear()));
+    }
   }
   if (state.minRating > 0) p.set('minimum_rating', String(state.minRating));
 
@@ -515,7 +526,10 @@ async function loadResults() {
       items = r.items;
       state.hasNext = r.hasNext;
       state.totalPages = Math.max(1, Math.ceil(r.total / MOVIES_LIMIT));
-      els.resultsInfo.textContent = `${fmtNumber(r.total)} movies found`;
+      els.resultsInfo.textContent =
+        state.moviePopular === 'all' ? `${fmtNumber(r.total)} movies · most downloaded (all time)`
+        : state.moviePopular === 'year' ? `${fmtNumber(r.total)} from ${new Date().getFullYear()} · most downloaded`
+        : `${fmtNumber(r.total)} movies found`;
     } else if (state.source === 'anime') {
       // Pull a bigger page when grouping or streaming-filtering so pages stay full.
       const limit = (state.groupSeries || state.streamingOnly) ? 50 : ANIME_LIMIT;
@@ -882,6 +896,8 @@ function bindEvents() {
     'input',
     debounce((e) => {
       state.query = e.target.value.trim();
+      // "Popular this year" hijacks the query term, so a text search cancels it.
+      if (state.query && state.moviePopular === 'year') { state.moviePopular = 'off'; els.moviePopular.value = 'off'; }
       state.page = 1;
       loadResults();
     }, 400)
@@ -898,6 +914,7 @@ function bindEvents() {
   });
 
   els.quality.addEventListener('change', () => { state.quality = els.quality.value; reload(); });
+  els.moviePopular.addEventListener('change', () => { state.moviePopular = els.moviePopular.value; reload(); });
   els.format.addEventListener('change', () => { state.format = els.format.value; reload(); });
   els.tagSel.addEventListener('change', () => { state.animeTag = els.tagSel.value; reload(); });
   els.statusSel.addEventListener('change', () => { state.animeStatus = els.statusSel.value; reload(); });
@@ -921,19 +938,21 @@ function bindEvents() {
   });
   els.sort.addEventListener('change', () => {
     if (state.source === 'anime') state.animeSort = els.sort.value;
-    else state.movieSort = els.sort.value;
+    // Choosing an explicit sort cancels the popularity preset (it forces its own sort).
+    else { state.movieSort = els.sort.value; state.moviePopular = 'off'; els.moviePopular.value = 'off'; }
     reload();
   });
 
   els.reset.addEventListener('click', () => {
     Object.assign(state, {
       query: '', page: 1,
-      quality: 'All', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
+      quality: 'All', moviePopular: 'off', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
       animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity',
       audience: 'sfw', minRating: 0, groupSeries: true, streamingOnly: false,
     });
     els.search.value = '';
     els.quality.value = 'All';
+    els.moviePopular.value = 'off';
     els.tagSel.value = 'All';
     els.format.value = 'All';
     els.statusSel.value = 'All';
@@ -1081,7 +1100,7 @@ async function loadAnimeTags() {
 
 // --- Preferences (persist tab / query / filters across a refresh) ---
 const PREFS_KEY = 'media-library:prefs';
-const PREF_KEYS = ['query', 'source', 'page', 'quality', 'movieGenre', 'movieSort',
+const PREF_KEYS = ['query', 'source', 'page', 'quality', 'moviePopular', 'movieGenre', 'movieSort',
   'order', 'animeGenre', 'animeTag', 'format', 'animeStatus', 'audience', 'animeSort', 'minRating', 'groupSeries', 'streamingOnly'];
 
 function savePrefs() {
@@ -1103,6 +1122,7 @@ function loadPrefs() {
 function syncControlsToState() {
   els.search.value = state.query || '';
   els.quality.value = state.quality;
+  els.moviePopular.value = state.moviePopular;
   els.format.value = state.format;
   els.statusSel.value = state.animeStatus;
   els.audience.value = state.audience;
