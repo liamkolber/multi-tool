@@ -23,14 +23,14 @@ if (-not (Test-Port $Port)) {
         Add-Type -AssemblyName System.Windows.Forms
         [void][System.Windows.Forms.MessageBox]::Show(
             "Node.js was not found on your PATH.`r`nInstall it from https://nodejs.org and run this again.",
-            'YTS Library')
+            'Media Library')
         return
     }
 
     # Launch the server in its own minimized window.
-    # (Close that "YTS Library Server" window to stop the app.)
+    # (Close that "Media Library Server" window to stop the app.)
     Start-Process -FilePath $env:ComSpec `
-        -ArgumentList '/c "title YTS Library Server & node server.mjs"' `
+        -ArgumentList '/c "title Media Library Server & node server.mjs"' `
         -WorkingDirectory $Root -WindowStyle Minimized
 
     # Wait up to ~15s for the server to start accepting connections.

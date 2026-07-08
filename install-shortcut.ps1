@@ -1,12 +1,12 @@
-# Creates (or refreshes) "YTS Library" shortcuts on your Desktop and in the Start
-# Menu that start the local server and open the app in your browser. Re-run this
-# if you move the project folder.
+# Creates (or refreshes) "Media Library" shortcuts on your Desktop and in the
+# Start Menu that start the local server and open the app in your browser. Re-run
+# this if you move the project folder.
 
 $ErrorActionPreference = 'Stop'
 
 $Root         = $PSScriptRoot
 $LauncherPath = Join-Path $Root 'launch.ps1'
-$IcoPath      = Join-Path $Root 'yts.ico'
+$IcoPath      = Join-Path $Root 'media.ico'
 $PsExe        = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
 # --- Generate a themed icon: blue rounded square with a white play triangle ---
@@ -55,7 +55,7 @@ function New-AppShortcut([string]$LnkPath) {
     $sc.Arguments        = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$LauncherPath`""
     $sc.WorkingDirectory = $Root
     $sc.WindowStyle      = 7   # minimized
-    $sc.Description      = 'Start the YTS Library browser and open it in your browser'
+    $sc.Description      = 'Start Media Library and open it in your browser'
     if ($IcoPath -and (Test-Path $IcoPath)) { $sc.IconLocation = "$IcoPath,0" }
     $sc.Save()
     Write-Host "Shortcut created: $LnkPath"
@@ -63,7 +63,7 @@ function New-AppShortcut([string]$LnkPath) {
 
 # 'Programs' is the current user's Start Menu\Programs folder (no admin needed).
 $targets = @(
-    (Join-Path ([Environment]::GetFolderPath('Desktop'))  'YTS Library.lnk'),
-    (Join-Path ([Environment]::GetFolderPath('Programs')) 'YTS Library.lnk')
+    (Join-Path ([Environment]::GetFolderPath('Desktop'))  'Media Library.lnk'),
+    (Join-Path ([Environment]::GetFolderPath('Programs')) 'Media Library.lnk')
 )
 foreach ($t in $targets) { New-AppShortcut $t }

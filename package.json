@@ -1,7 +1,7 @@
 {
-  "name": "yts-library-browser",
+  "name": "media-library",
   "version": "1.0.0",
-  "description": "A local web app to browse the YTS movie library via its public API",
+  "description": "A local web app to browse movies/TV (YTS) and anime (AniList) from one search box",
   "type": "module",
   "main": "server.mjs",
   "scripts": {

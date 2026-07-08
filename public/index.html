@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YTS Library Browser</title>
+  <title>Media Library</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -12,14 +12,14 @@
     <div class="topbar-inner">
       <div class="brand">
         <span class="brand-mark">🎬</span>
-        <span class="brand-name">YTS Library</span>
+        <span class="brand-name">Media Library</span>
       </div>
 
       <div class="search">
         <input
           id="search"
           type="search"
-          placeholder="Search by title, actor, director, or IMDb code…"
+          placeholder="Search movies, TV & anime…"
           autocomplete="off"
           spellcheck="false"
         />
@@ -27,23 +27,44 @@
     </div>
 
     <div class="filters">
-      <label class="field">
+      <div class="source-toggle" id="source-toggle" role="tablist" aria-label="Library">
+        <button class="src-btn active" data-src="all" type="button">All</button>
+        <button class="src-btn" data-src="movies" type="button">Movies &amp; TV</button>
+        <button class="src-btn" data-src="anime" type="button">Anime</button>
+        <button class="src-btn" data-src="watchlist" type="button">★ Watchlist</button>
+      </div>
+
+      <label class="field" data-for="movies">
         <span>Quality</span>
         <select id="quality"></select>
       </label>
-      <label class="field">
+      <label class="field" data-for="movies anime">
         <span>Genre</span>
         <select id="genre"></select>
       </label>
-      <label class="field">
+      <label class="field" data-for="anime">
+        <span>Tag</span>
+        <select id="anime-tag"></select>
+      </label>
+      <label class="field" data-for="anime">
+        <span>Format</span>
+        <select id="format"></select>
+      </label>
+      <label class="field" data-for="anime">
+        <span>Status</span>
+        <select id="anime-status"></select>
+      </label>
+      <button class="pill" id="group-series" type="button" data-for="anime"
+        title="Collapse same-series entries into one card">⧉ Group series</button>
+      <label class="field" data-for="all movies anime">
         <span>Min rating</span>
         <select id="rating"></select>
       </label>
-      <label class="field">
+      <label class="field" data-for="movies anime">
         <span>Sort by</span>
         <select id="sort"></select>
       </label>
-      <label class="field">
+      <label class="field" data-for="movies">
         <span>Order</span>
         <select id="order"></select>
       </label>

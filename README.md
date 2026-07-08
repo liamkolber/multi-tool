@@ -1,9 +1,13 @@
-# YTS Library Browser
+# Media Library
 
-A local web app for browsing the [YTS](https://yts.gg) movie library through its
-public API. Search, filter by quality / genre / rating, sort, page through the
-whole ~76k-title catalog, and open any movie for its synopsis, trailer, and
-download links (magnet + `.torrent`).
+A local web app for browsing **movies & TV** (via the [YTS](https://yts.gg) API)
+and **anime** (via the public [AniList](https://anilist.co) API) from one search
+box. Filter, sort, and page through both libraries; open any title for details.
+
+- **Movies/TV:** synopsis, trailer, IMDb link, and per-quality download rows
+  (magnet + `.torrent`).
+- **Anime:** synopsis, studio, trailer, and **official streaming links** (where
+  it's legally available — Crunchyroll, Netflix, HIDIVE, …).
 
 No build step, no dependencies — just Node.
 
@@ -54,12 +58,12 @@ browser  ──►  server.mjs  ──►  YTS API (movies-api.accel.li/api/v2)
 ```
 
 - **`server.mjs`** serves the frontend from `public/` and exposes a small proxy
-  at `/api/*`. The proxy only forwards a whitelist of endpoints
-  (`list_movies`, `movie_details`, `movie_suggestions`,
-  `movie_parental_guides`), which sidesteps browser CORS restrictions and adds a
-  short in-memory cache so paging is snappy.
+  at `/api/*`: the YTS endpoints (`list_movies`, `movie_details`, …) plus
+  `anime_search`, which calls the AniList GraphQL API server-side and normalises
+  the result into the same shape as a movie. This sidesteps browser CORS and adds
+  a short in-memory cache so paging is snappy.
 - **`public/`** is the UI: a responsive poster grid (`app.js` + `styles.css`)
-  driven entirely by the API.
+  driven entirely by those endpoints.
 
 Point at a different mirror/upstream with the `YTS_API` env var:
 
@@ -69,15 +73,28 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
 
 ## Features
 
-- 🔍 Search by title, actor, director, or IMDb code
-- 🎚️ Filter by quality, genre, and minimum rating
-- ↕️ Sort by date added, downloads, likes, rating, year, title, peers, or seeds
-- 🖼️ Poster grid with rating badges and available-quality tags
-- 🎬 Detail view: synopsis, runtime, genres, trailer, IMDb link, and per-quality
-  download rows (magnet links assembled client-side + `.torrent` files)
+- 🔍 One search box across movies/TV **and** anime, with an All / Movies & TV /
+  Anime / ★ Watchlist toggle
+- 🎚️ Movie filters (quality, genre, rating, sort) and anime filters (genre,
+  **tag** (AniList's full tag set, grouped by category), format,
+  **status incl. "Airing now"**, score, sort), shown per source
+- 🖼️ Unified poster grid with rating badges, a source badge, and a ☆ bookmark
+  on every card
+- 🗂️ **Group series** toggle (Anime tab) — collapse same-franchise entries
+  (Fate/…, One Piece films) into one series card; open it for the full entry
+  list, sortable **By year** or **Story order** (chronological prequel→sequel,
+  derived from AniList's relation graph), with a back button between the two views
+- ⭐ **Watchlist** saved in your browser (localStorage), with its own tab
+- ▶️ **Inline trailers** — play the YouTube/Dailymotion trailer in the detail view
+- 🎬 Movie detail: synopsis, IMDb, per-quality magnet + `.torrent` rows
+- 🌸 Anime detail: synopsis, studio, tags, **characters + voice actors**,
+  **related entries** (prequels/sequels/side stories — click to open), official
+  "where to watch" streaming links, plus a **MyAnimeList link + score** (via
+  Jikan) alongside the AniList score
 - ⌨️ Keyboard friendly (open cards with Enter, close the modal with Esc)
 
 ## Notes
 
-This is a read-only client for a public API. It surfaces exactly what the YTS API
-returns and does not download or store any media itself.
+Read-only client for public APIs. It surfaces what the YTS and AniList APIs
+return (including YTS's own torrent links and AniList's official streaming links)
+and does not download or store any media itself.
