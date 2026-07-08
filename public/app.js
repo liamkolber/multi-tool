@@ -26,6 +26,11 @@ const MOVIE_SORTS = [
 // YTS only exposes all-time download counts (no monthly stats); "This year"
 // works by using the year as the search term, then sorting by downloads.
 const MOVIE_POPULAR = [['off', '—'], ['all', 'All time'], ['year', 'This year']];
+// YTS's mpa_rating mixes MPAA / TV / international values, so filter by bucket.
+const MOVIE_RATINGS = [
+  ['Any', 'Any'], ['g', 'G'], ['pg', 'PG'], ['pg-13', 'PG-13'],
+  ['r', 'R'], ['nc-17', 'NC-17'], ['nr', 'Unrated'],
+];
 const ANIME_SORTS = [
   ['popularity', 'Popularity'], ['trending', 'Trending'], ['score', 'Top rated'],
   ['newest', 'Newest'], ['title', 'Title'],
@@ -38,9 +43,17 @@ const STATUSES = [
   ['All', 'Any status'], ['RELEASING', 'Airing now'], ['FINISHED', 'Finished'],
   ['NOT_YET_RELEASED', 'Upcoming'],
 ];
-const AUDIENCES = [
-  ['sfw', 'All ages'], ['adult', 'Adult (18+)'], ['all', 'All (incl. adult)'],
+// Unified anime maturity ladder. The MAL-tier options route through the Jikan
+// -> AniList rating pipeline (SFW); "Adult (18+)" routes through AniList isAdult.
+const ANIME_RATINGS = [
+  ['any', 'Any'], ['pg', 'PG & up'], ['pg13', 'Teen 13+ & up'],
+  ['r17', 'Mature 17+ & up'], ['adult', 'Adult (18+)'],
 ];
+const MAL_TIER_KEYS = ['pg', 'pg13', 'r17'];
+function ratingTierLabel(tier) {
+  const f = ANIME_RATINGS.find(([v]) => v === tier);
+  return f ? f[1] : tier;
+}
 
 // Public trackers YTS advertises — used to assemble magnet links client-side.
 const TRACKERS = [
@@ -74,11 +87,11 @@ const state = {
   source: 'all', // all | movies | anime | watchlist
   page: 1,
   // movie filters
-  quality: 'All', moviePopular: 'off', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
+  quality: 'All', moviePopular: 'off', movieRating: 'Any', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
   // anime filters
-  animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity', audience: 'sfw',
+  animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity', animeRating: 'any',
   // shared — grouping is on by default; the pill toggles it off
-  minRating: 0, groupSeries: true, streamingOnly: false,
+  groupSeries: true, streamingOnly: false,
   // pager
   hasNext: false, totalPages: null,
 };
@@ -93,14 +106,14 @@ const els = {
   sourceToggle: $('source-toggle'),
   quality: $('quality'),
   moviePopular: $('movie-popular'),
+  movieRating: $('movie-rating'),
   genre: $('genre'),
   tagSel: $('anime-tag'),
   format: $('format'),
   statusSel: $('anime-status'),
-  audience: $('anime-audience'),
+  animeRating: $('anime-rating'),
   groupSeries: $('group-series'),
   streamingOnly: $('streaming-only'),
-  rating: $('rating'),
   sort: $('sort'),
   order: $('order'),
   reset: $('reset'),
@@ -138,6 +151,13 @@ function fmtFormat(f) {
 
 function niceStatus(s) {
   return { RELEASING: 'Airing', FINISHED: 'Finished', NOT_YET_RELEASED: 'Upcoming', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }[s] || null;
+}
+
+// Episode count — falls back to "N aired" for airing shows with no defined total.
+function episodeText(it) {
+  if (it.episodes) return `${it.episodes} ep`;
+  if (it.nextEpisode && it.nextEpisode > 1) return `${it.nextEpisode - 1} aired`;
+  return null;
 }
 
 function esc(str) {
@@ -210,12 +230,11 @@ function bookmarkBtn(source, id) {
 function buildStaticControls() {
   QUALITIES.forEach((q) => els.quality.append(option(q, q, q === 'All')));
   MOVIE_POPULAR.forEach(([v, label]) => els.moviePopular.append(option(v, label, v === 'off')));
+  MOVIE_RATINGS.forEach(([v, label]) => els.movieRating.append(option(v, label, v === 'Any')));
   FORMATS.forEach(([v, label]) => els.format.append(option(v, label, v === 'All')));
   STATUSES.forEach(([v, label]) => els.statusSel.append(option(v, label, v === 'All')));
-  AUDIENCES.forEach(([v, label]) => els.audience.append(option(v, label, v === 'sfw')));
+  ANIME_RATINGS.forEach(([v, label]) => els.animeRating.append(option(v, label, v === 'any')));
 
-  els.rating.append(option('0', 'Any', true));
-  for (let r = 9; r >= 5; r--) els.rating.append(option(String(r), `${r}+ ★`));
 
   els.order.append(option('desc', 'Descending', true));
   els.order.append(option('asc', 'Ascending'));
@@ -254,7 +273,32 @@ function normalizeMovie(m) {
     rating: m.rating || null,
     poster: m.medium_cover_image || m.large_cover_image || null,
     qualities: [...new Set((m.torrents || []).map((t) => t.quality))],
+    mpa: m.mpa_rating || '',
   };
+}
+
+// Map YTS's inconsistent rating strings (MPAA / TV / international) into buckets.
+function ratingBucket(mpa) {
+  const v = String(mpa || '').toUpperCase().trim();
+  if (!v) return 'nr';
+  if (['G', 'TV-G', 'TV-Y', 'TV-Y7', 'U', '0+'].includes(v)) return 'g';
+  if (['PG', 'TV-PG', '6+', '7+'].includes(v)) return 'pg';
+  if (['PG-13', 'TV-14', '12+', '13+', '14+', '12', '13', '14', '15', '15+'].includes(v)) return 'pg-13';
+  if (['R', 'TV-MA', '16+', '16', '17+', 'NC16', 'M', 'MA15+', 'R16', 'R15+'].includes(v)) return 'r';
+  if (['NC-17', 'X', '18', '18+', 'R18', 'R18+', 'R21'].includes(v)) return 'nc-17';
+  return 'nr'; // Not Rated / Unrated / Approved / Passed / etc.
+}
+
+function mpaChip(mpa) {
+  if (!mpa) return '';
+  const b = ratingBucket(mpa);
+  const label = b === 'nr' ? 'NR' : mpa;
+  return `<span class="mpa mpa-${b}">${esc(label)}</span>`;
+}
+
+function ratingLabel(bucket) {
+  const found = MOVIE_RATINGS.find(([v]) => v === bucket);
+  return found ? found[1] : bucket;
 }
 
 function interleave(a, b) {
@@ -325,7 +369,7 @@ function byYear(items) {
 }
 
 function seriesRowHtml(e) {
-  const meta = [e.year || '—', fmtFormat(e.format), e.episodes ? `${e.episodes} ep` : null].filter(Boolean).join(' · ');
+  const meta = [e.year || '—', fmtFormat(e.format), episodeText(e)].filter(Boolean).join(' · ');
   const rating = e.rating ? ` <span class="star">★</span> ${e.rating}` : '';
   return `
     <button class="series-entry" data-entry-id="${e.id}" type="button">
@@ -444,21 +488,38 @@ async function fetchMovies(limit) {
       if (state.moviePopular === 'year') p.set('query_term', String(new Date().getFullYear()));
     }
   }
-  if (state.minRating > 0) p.set('minimum_rating', String(state.minRating));
-
-  const res = await fetch(`/api/list_movies?${p.toString()}`);
+  const res = await fetch(`/api/movie_search?${p.toString()}`);
   const json = await res.json();
   if (json.status !== 'ok') throw new Error(json.status_message || 'Movie API error');
 
   const total = json.data.movie_count || 0;
+  let items = (json.data.movies || []).map(normalizeMovie);
+  // YTS can't filter by content rating server-side, so post-filter by bucket.
+  if (state.source === 'movies' && state.movieRating !== 'Any') {
+    items = items.filter((m) => ratingBucket(m.mpa) === state.movieRating);
+  }
   return {
-    items: (json.data.movies || []).map(normalizeMovie),
+    items,
     total,
     hasNext: state.page < Math.ceil(total / limit),
+    bridged: json.data.bridged || 0,
   };
 }
 
 async function fetchAnime(limit) {
+  // Rating filter takes its own path: MAL tiers (Jikan) re-hydrated via AniList.
+  // In this mode genre/tag/format/status/sort don't apply.
+  if (state.source === 'anime' && MAL_TIER_KEYS.includes(state.animeRating)) {
+    const rp = new URLSearchParams({ tier: state.animeRating, page: String(state.page) });
+    if (state.query) rp.set('q', state.query);
+    const rres = await fetch(`/api/anime_by_rating?${rp.toString()}`);
+    const rjson = await rres.json();
+    if (rjson.status !== 'ok') throw new Error(rjson.status_message || 'Anime rating API error');
+    let ritems = rjson.data.items || [];
+    if (state.streamingOnly) ritems = ritems.filter((i) => (i.streaming || []).length > 0);
+    return { items: ritems, total: rjson.data.total, hasNext: rjson.data.hasNextPage };
+  }
+
   const p = new URLSearchParams({ perPage: String(limit), page: String(state.page) });
   if (state.query) p.set('q', state.query);
   p.set('sort', state.source === 'all' ? (state.query ? 'match' : 'popularity') : state.animeSort);
@@ -467,10 +528,8 @@ async function fetchAnime(limit) {
     if (state.animeTag !== 'All') p.set('tag', state.animeTag);
     if (state.format !== 'All') p.set('format', state.format);
     if (state.animeStatus !== 'All') p.set('status', state.animeStatus);
-    if (state.audience !== 'sfw') p.set('audience', state.audience);
+    if (state.animeRating === 'adult') p.set('audience', 'adult');
   }
-  if (state.minRating > 0) p.set('min_score', String(state.minRating * 10));
-
   const res = await fetch(`/api/anime_search?${p.toString()}`);
   const json = await res.json();
   if (json.status !== 'ok') throw new Error(json.status_message || 'Anime API error');
@@ -522,27 +581,44 @@ async function loadResults() {
     let items = [];
 
     if (state.source === 'movies') {
-      const r = await fetchMovies(MOVIES_LIMIT);
+      // Rating is post-filtered, so pull a bigger page to keep it from looking empty.
+      const rated = state.movieRating !== 'Any';
+      const limit = rated ? 50 : MOVIES_LIMIT;
+      const r = await fetchMovies(limit);
       items = r.items;
       state.hasNext = r.hasNext;
-      state.totalPages = Math.max(1, Math.ceil(r.total / MOVIES_LIMIT));
-      els.resultsInfo.textContent =
-        state.moviePopular === 'all' ? `${fmtNumber(r.total)} movies · most downloaded (all time)`
-        : state.moviePopular === 'year' ? `${fmtNumber(r.total)} from ${new Date().getFullYear()} · most downloaded`
-        : `${fmtNumber(r.total)} movies found`;
+      if (rated) {
+        state.totalPages = null;
+        els.resultsInfo.textContent = `Movies rated ${ratingLabel(state.movieRating)}`;
+      } else {
+        state.totalPages = Math.max(1, Math.ceil(r.total / limit));
+        const baseLabel =
+          state.moviePopular === 'all' ? `${fmtNumber(r.total)} movies · most downloaded (all time)`
+          : state.moviePopular === 'year' ? `${fmtNumber(r.total)} from ${new Date().getFullYear()} · most downloaded`
+          : `${fmtNumber(r.total)} movies found`;
+        els.resultsInfo.textContent =
+          (r.bridged && r.bridged >= r.total) ? `${fmtNumber(r.total)} found by English-title match`
+          : r.bridged ? `${baseLabel} · +${r.bridged} cross-language`
+          : baseLabel;
+      }
     } else if (state.source === 'anime') {
       // Pull a bigger page when grouping or streaming-filtering so pages stay full.
       const limit = (state.groupSeries || state.streamingOnly) ? 50 : ANIME_LIMIT;
       const r = await fetchAnime(limit);
       items = r.items;
       state.hasNext = r.hasNext;
-      if (state.streamingOnly) {
+      if (MAL_TIER_KEYS.includes(state.animeRating)) {
+        state.totalPages = null;
+        els.resultsInfo.textContent = `Anime · ${ratingTierLabel(state.animeRating)} · MAL tiers`;
+      } else if (state.streamingOnly) {
         // Post-filtered, so the raw total no longer applies.
         state.totalPages = null;
         els.resultsInfo.textContent = 'Anime with an official streaming source';
       } else {
         state.totalPages = r.total ? Math.max(1, Math.ceil(r.total / limit)) : null;
-        els.resultsInfo.textContent = `${fmtNumber(r.total)} anime found`;
+        els.resultsInfo.textContent = state.animeRating === 'adult'
+          ? `${fmtNumber(r.total)} adult (18+) anime`
+          : `${fmtNumber(r.total)} anime found`;
       }
     } else {
       const [mv, an] = await Promise.all([fetchMovies(ALL_HALF), fetchAnime(ALL_HALF)]);
@@ -596,7 +672,7 @@ function cardHtml(it) {
     : '';
 
   if (it.source === 'anime') {
-    const meta = [it.year || '—', fmtFormat(it.format), it.episodes ? `${it.episodes} ep` : null]
+    const meta = [it.year || '—', fmtFormat(it.format), episodeText(it)]
       .filter(Boolean).join(' · ');
     return `
       <article class="card" data-source="anime" data-id="${it.id}" tabindex="0">
@@ -629,7 +705,7 @@ function cardHtml(it) {
       </div>
       <div class="card-body">
         <h3 class="card-title">${esc(it.title)}</h3>
-        <div class="card-meta">${it.year || '—'}</div>
+        <div class="card-meta">${it.year || '—'}${mpaChip(it.mpa)}</div>
       </div>
     </article>`;
 }
@@ -665,7 +741,7 @@ function movieDetailHtml(m) {
   const poster = m.large_cover_image || m.medium_cover_image || PLACEHOLDER;
   const genres = (m.genres || []).map((g) => `<span class="chip">${esc(g)}</span>`).join('');
   const runtime = m.runtime ? `${m.runtime} min` : null;
-  const subParts = [m.year, runtime, m.language ? m.language.toUpperCase() : null, m.mpa_rating]
+  const subParts = [m.year, runtime, m.language ? m.language.toUpperCase() : null]
     .filter(Boolean).map(esc);
   const ratingHtml = m.rating ? `<span class="star">★</span> ${m.rating}/10` : '';
 
@@ -708,6 +784,7 @@ function movieDetailHtml(m) {
       <div class="detail-sub">
         ${subParts.join('<span class="dot">·</span>')}
         ${ratingHtml ? `<span class="dot">·</span>${ratingHtml}` : ''}
+        ${m.mpa_rating ? mpaChip(m.mpa_rating) : ''}
       </div>
       <div class="genre-chips">${genres}</div>
       <p class="detail-summary">${esc(m.description_full || m.summary || 'No synopsis available.')}</p>
@@ -818,7 +895,7 @@ function animeDetailHtml(it, returnKey = null) {
     ? `<button class="back-btn" data-back-series="${esc(returnKey)}" type="button">← ${esc(seriesGroups.get(returnKey).name)}</button>`
     : '';
   const genres = (it.genres || []).map((g) => `<span class="chip">${esc(g)}</span>`).join('');
-  const sub = [it.year, fmtFormat(it.format), it.episodes ? `${it.episodes} ep` : null, niceStatus(it.status), it.studio]
+  const sub = [it.year, fmtFormat(it.format), episodeText(it), niceStatus(it.status), it.studio]
     .filter(Boolean).map(esc);
   const ratingHtml = it.rating ? `<span class="star">★</span> ${it.rating}/10` : '';
 
@@ -915,10 +992,11 @@ function bindEvents() {
 
   els.quality.addEventListener('change', () => { state.quality = els.quality.value; reload(); });
   els.moviePopular.addEventListener('change', () => { state.moviePopular = els.moviePopular.value; reload(); });
+  els.movieRating.addEventListener('change', () => { state.movieRating = els.movieRating.value; reload(); });
   els.format.addEventListener('change', () => { state.format = els.format.value; reload(); });
   els.tagSel.addEventListener('change', () => { state.animeTag = els.tagSel.value; reload(); });
   els.statusSel.addEventListener('change', () => { state.animeStatus = els.statusSel.value; reload(); });
-  els.audience.addEventListener('change', () => { state.audience = els.audience.value; reload(); });
+  els.animeRating.addEventListener('change', () => { state.animeRating = els.animeRating.value; reload(); });
   els.groupSeries.addEventListener('click', () => {
     state.groupSeries = !state.groupSeries;
     els.groupSeries.classList.toggle('active', state.groupSeries);
@@ -929,7 +1007,6 @@ function bindEvents() {
     els.streamingOnly.classList.toggle('active', state.streamingOnly);
     reload();
   });
-  els.rating.addEventListener('change', () => { state.minRating = Number(els.rating.value); reload(); });
   els.order.addEventListener('change', () => { state.order = els.order.value; reload(); });
   els.genre.addEventListener('change', () => {
     if (state.source === 'anime') state.animeGenre = els.genre.value;
@@ -946,18 +1023,18 @@ function bindEvents() {
   els.reset.addEventListener('click', () => {
     Object.assign(state, {
       query: '', page: 1,
-      quality: 'All', moviePopular: 'off', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
+      quality: 'All', moviePopular: 'off', movieRating: 'Any', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
       animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity',
-      audience: 'sfw', minRating: 0, groupSeries: true, streamingOnly: false,
+      animeRating: 'any', groupSeries: true, streamingOnly: false,
     });
     els.search.value = '';
     els.quality.value = 'All';
     els.moviePopular.value = 'off';
+    els.movieRating.value = 'Any';
     els.tagSel.value = 'All';
     els.format.value = 'All';
     els.statusSel.value = 'All';
-    els.audience.value = 'sfw';
-    els.rating.value = '0';
+    els.animeRating.value = 'any';
     els.order.value = 'desc';
     els.groupSeries.classList.add('active');
     els.streamingOnly.classList.remove('active');
@@ -1100,8 +1177,8 @@ async function loadAnimeTags() {
 
 // --- Preferences (persist tab / query / filters across a refresh) ---
 const PREFS_KEY = 'media-library:prefs';
-const PREF_KEYS = ['query', 'source', 'page', 'quality', 'moviePopular', 'movieGenre', 'movieSort',
-  'order', 'animeGenre', 'animeTag', 'format', 'animeStatus', 'audience', 'animeSort', 'minRating', 'groupSeries', 'streamingOnly'];
+const PREF_KEYS = ['query', 'source', 'page', 'quality', 'moviePopular', 'movieRating', 'movieGenre', 'movieSort',
+  'order', 'animeGenre', 'animeTag', 'format', 'animeStatus', 'animeRating', 'animeSort', 'groupSeries', 'streamingOnly'];
 
 function savePrefs() {
   const data = {};
@@ -1123,10 +1200,10 @@ function syncControlsToState() {
   els.search.value = state.query || '';
   els.quality.value = state.quality;
   els.moviePopular.value = state.moviePopular;
+  els.movieRating.value = state.movieRating;
   els.format.value = state.format;
   els.statusSel.value = state.animeStatus;
-  els.audience.value = state.audience;
-  els.rating.value = String(state.minRating);
+  els.animeRating.value = state.animeRating;
   els.order.value = state.order;
   els.groupSeries.classList.toggle('active', state.groupSeries);
   els.streamingOnly.classList.toggle('active', state.streamingOnly);

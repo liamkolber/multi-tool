@@ -49,6 +49,7 @@ const ANIME_FIELDS = `
       genres
       format
       episodes
+      nextAiringEpisode { episode }
       status
       description(asHtml: false)
       coverImage { extraLarge large color }
@@ -110,6 +111,7 @@ function normalizeAnime(m) {
     genres: m.genres || [],
     format: m.format || null,
     episodes: m.episodes || null,
+    nextEpisode: (m.nextAiringEpisode && m.nextAiringEpisode.episode) || null,
     status: m.status || null,
     summary: stripHtml(m.description),
     siteUrl: m.siteUrl || null,
@@ -261,6 +263,107 @@ async function handleApi(res, url) {
   }
 }
 
+// --- YTS cross-language movie search -----------------------------------------
+// YTS only searches the titles it stores, so an English title that differs from
+// the stored (often original-language) title returns nothing. Bridge via IMDb's
+// public suggestion endpoint: English title -> IMDb id -> YTS lookup by id.
+
+async function ytsFetchData(qs) {
+  const upstreamUrl = `${UPSTREAM}/list_movies.json${qs}`;
+  const hit = cache.get(upstreamUrl);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    try { return JSON.parse(hit.body).data || { movie_count: 0, movies: [] }; } catch { /* refetch */ }
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const r = await fetch(upstreamUrl, {
+      headers: { 'User-Agent': 'yts-library-browser/1.0', Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const body = await r.text();
+    if (r.ok) {
+      cache.set(upstreamUrl, { at: Date.now(), body });
+      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+    }
+    return JSON.parse(body).data || { movie_count: 0, movies: [] };
+  } catch {
+    return { movie_count: 0, movies: [] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function imdbSuggest(term) {
+  const key = `imdb:${term.toLowerCase()}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) { try { return JSON.parse(hit.body); } catch { /* refetch */ } }
+  const url = `https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(term)}.json?includeVideos=0`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0' }, signal: controller.signal });
+    if (!r.ok) return [];
+    const j = await r.json();
+    const ids = (j.d || []).map((x) => x && x.id)
+      .filter((id) => typeof id === 'string' && id.startsWith('tt')).slice(0, 5);
+    cache.set(key, { at: Date.now(), body: JSON.stringify(ids) });
+    return ids;
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function handleMovieSearch(res, url) {
+  const q = url.searchParams;
+  const term = q.get('query_term') || '';
+  const page = Number(q.get('page')) || 1;
+  // Run the IMDb bridge ALONGSIDE the YTS search on every text search (page 1
+  // only, so pagination stays coherent) — a close "regular" match must not hide
+  // the international film with a near-identical title. YTS + bridge run in
+  // parallel; the bridge only contributes films YTS's own search missed.
+  const bridge = /[a-z]/i.test(term) && !term.startsWith('tt') && page === 1;
+
+  const [primary, ids] = await Promise.all([
+    ytsFetchData(url.search),
+    bridge ? imdbSuggest(term) : Promise.resolve([]),
+  ]);
+
+  if (!bridge || !ids.length) {
+    return sendJson(res, 200, { status: 'ok', data: primary });
+  }
+
+  const movies = (primary.movies || []).slice();
+  const seen = new Set(movies.map((m) => m.id));
+  // Look each IMDb id up on YTS, carrying the same filters (genre/quality/etc.).
+  const found = await Promise.all(ids.map((id) => {
+    const p = new URLSearchParams(q);
+    p.set('query_term', id);
+    p.delete('page');
+    return ytsFetchData('?' + p.toString());
+  }));
+  let bridged = 0;
+  for (const d of found) {
+    for (const m of (d.movies || [])) {
+      if (!seen.has(m.id)) { seen.add(m.id); movies.push(m); bridged++; }
+    }
+  }
+
+  const primaryCount = primary.movie_count || 0;
+  sendJson(res, 200, {
+    status: 'ok',
+    data: {
+      movie_count: primaryCount > 0 ? primaryCount : movies.length,
+      limit: primary.limit || 20,
+      page_number: 1,
+      movies,
+      bridged,
+    },
+  });
+}
+
 async function handleAnimeSearch(res, url) {
   const q = url.searchParams;
   const searchVal = q.get('q') || null;
@@ -383,6 +486,86 @@ async function handleMalScore(res, url) {
     const reason = err.name === 'AbortError' ? 'Jikan request timed out' : err.message;
     sendJson(res, 502, { status: 'error', status_message: `Jikan proxy error: ${reason}` });
   }
+}
+
+// --- Anime rating filter (MAL tiers via Jikan, re-hydrated from AniList) ------
+// AniList has no rating; MAL does. We pull MAL ids at the requested tier(s) from
+// Jikan, then re-hydrate the rich data from AniList via idMal_in.
+const RATING_TIER_ORDER = ['g', 'pg', 'pg13', 'r17', 'r'];
+
+async function jikanByRating(rating, page, q, perPage) {
+  const p = new URLSearchParams({
+    rating, order_by: 'members', sort: 'desc', page: String(page), limit: String(perPage), sfw: 'true',
+  });
+  if (q) p.set('q', q);
+  const url = `https://api.jikan.moe/v4/anime?${p.toString()}`;
+  const key = `jikan:${url}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) { try { return JSON.parse(hit.body); } catch { /* refetch */ } }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12_000);
+  try {
+    const r = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'yts-library-browser/1.0' }, signal: controller.signal });
+    if (!r.ok) return { ids: [], hasNext: false };
+    const j = await r.json();
+    const out = {
+      ids: (j.data || []).map((a) => a.mal_id).filter(Boolean),
+      hasNext: !!(j.pagination && j.pagination.has_next_page),
+    };
+    cache.set(key, { at: Date.now(), body: JSON.stringify(out) });
+    return out;
+  } catch {
+    return { ids: [], hasNext: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function anilistByMalIds(malIds) {
+  if (!malIds.length) return {};
+  const query = `query ($ids: [Int]) { Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) {${ANIME_FIELDS}} } }`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
+    const r = await fetch(ANILIST_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'yts-library-browser/1.0' },
+      body: JSON.stringify({ query, variables: { ids: malIds } }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const j = await r.json();
+    const media = (j.data && j.data.Page && j.data.Page.media) || [];
+    const byMal = {};
+    media.forEach((m) => { if (m.idMal) byMal[m.idMal] = normalizeAnime(m); });
+    return byMal;
+  } catch {
+    return {};
+  }
+}
+
+async function handleAnimeByRating(res, url) {
+  const q = url.searchParams;
+  const tier = q.get('tier') || 'r17';
+  const page = Number(q.get('page')) || 1;
+  const search = q.get('q') || '';
+  const start = RATING_TIER_ORDER.indexOf(tier);
+  const buckets = start >= 0 ? RATING_TIER_ORDER.slice(start) : ['r17', 'r']; // "and up"
+  const perPage = Math.max(6, Math.ceil(24 / buckets.length));
+
+  // Sequential (not parallel) to respect Jikan's ~3 req/sec rate limit.
+  const perBucket = [];
+  for (const b of buckets) perBucket.push(await jikanByRating(b, page, search, perPage));
+  // Interleave ids across tiers so the page blends them by popularity.
+  const ordered = [];
+  const maxLen = Math.max(0, ...perBucket.map((b) => b.ids.length));
+  for (let i = 0; i < maxLen; i++) for (const b of perBucket) if (i < b.ids.length) ordered.push(b.ids[i]);
+  const hasNext = perBucket.some((b) => b.hasNext);
+
+  const byMal = await anilistByMalIds(ordered.slice(0, 50));
+  const items = ordered.map((id) => byMal[id]).filter(Boolean);
+
+  sendJson(res, 200, { status: 'ok', data: { items, page, hasNextPage: hasNext, total: null } });
 }
 
 async function handleAnimeDetails(res, url) {
@@ -585,10 +768,14 @@ const server = createServer((req, res) => {
     return sendJson(res, 400, { status: 'error', status_message: 'Bad request URL' });
   }
 
-  if (url.pathname === '/api/anime_search') {
+  if (url.pathname === '/api/movie_search') {
+    handleMovieSearch(res, url);
+  } else if (url.pathname === '/api/anime_search') {
     handleAnimeSearch(res, url);
   } else if (url.pathname === '/api/anime_details') {
     handleAnimeDetails(res, url);
+  } else if (url.pathname === '/api/anime_by_rating') {
+    handleAnimeByRating(res, url);
   } else if (url.pathname === '/api/anime_genres') {
     handleAnimeGenres(res);
   } else if (url.pathname === '/api/anime_tags') {

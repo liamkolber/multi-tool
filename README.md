@@ -75,12 +75,19 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
 
 - 🔍 One search box across movies/TV **and** anime, with an All / Movies & TV /
   Anime / ★ Watchlist toggle
-- 🎚️ Movie filters (quality, **popular: all-time / this-year**, genre, rating,
-  sort) and anime filters (genre,
+- 🌐 Cross-language titles: anime search matches English / romaji / native
+  (AniList does this natively); movie search runs an IMDb-id lookup **alongside**
+  YTS on every text search and merges the results (deduped, page 1), so an
+  English title also finds a film YTS only lists under its original title
+  (e.g. "Crimson Gold" → "Talaye sorkh") — via IMDb's public suggestion endpoint
+- 🎚️ Movie filters (quality, **popular: all-time / this-year**, **age rating**
+  (R/PG-13/… as a color-coded chip on each card), genre, sort) and
+  anime filters (genre,
   **tag** (AniList's full tag set, grouped by category), format,
-  **status incl. "Airing now"**, **audience (all-ages / 18+ / all)**, score,
-  sort), plus a **▶ Streamable** toggle (only titles with an official streaming
-  source), shown per source
+  **status incl. "Airing now"**, **rating (one maturity ladder: Any / PG / Teen
+  13+ / Mature 17+ & up via MAL tiers (Jikan→AniList), plus Adult 18+ via
+  AniList `isAdult`)**, sort), plus a **▶ Streamable** toggle (only titles with an
+  official streaming source), shown per source
 - 🖼️ Unified poster grid with rating badges, a source badge, and a ☆ bookmark
   on every card
 - 🗂️ **Group series** toggle (Anime tab) — collapse same-franchise entries
