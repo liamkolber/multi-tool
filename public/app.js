@@ -35,6 +35,9 @@ const STATUSES = [
   ['All', 'Any status'], ['RELEASING', 'Airing now'], ['FINISHED', 'Finished'],
   ['NOT_YET_RELEASED', 'Upcoming'],
 ];
+const AUDIENCES = [
+  ['sfw', 'All ages'], ['adult', 'Adult (18+)'], ['all', 'All (incl. adult)'],
+];
 
 // Public trackers YTS advertises — used to assemble magnet links client-side.
 const TRACKERS = [
@@ -70,9 +73,9 @@ const state = {
   // movie filters
   quality: 'All', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
   // anime filters
-  animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity',
+  animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity', audience: 'sfw',
   // shared — grouping is on by default; the pill toggles it off
-  minRating: 0, groupSeries: true,
+  minRating: 0, groupSeries: true, streamingOnly: false,
   // pager
   hasNext: false, totalPages: null,
 };
@@ -90,7 +93,9 @@ const els = {
   tagSel: $('anime-tag'),
   format: $('format'),
   statusSel: $('anime-status'),
+  audience: $('anime-audience'),
   groupSeries: $('group-series'),
+  streamingOnly: $('streaming-only'),
   rating: $('rating'),
   sort: $('sort'),
   order: $('order'),
@@ -202,6 +207,7 @@ function buildStaticControls() {
   QUALITIES.forEach((q) => els.quality.append(option(q, q, q === 'All')));
   FORMATS.forEach(([v, label]) => els.format.append(option(v, label, v === 'All')));
   STATUSES.forEach(([v, label]) => els.statusSel.append(option(v, label, v === 'All')));
+  AUDIENCES.forEach(([v, label]) => els.audience.append(option(v, label, v === 'sfw')));
 
   els.rating.append(option('0', 'Any', true));
   for (let r = 9; r >= 5; r--) els.rating.append(option(String(r), `${r}+ ★`));
@@ -450,6 +456,7 @@ async function fetchAnime(limit) {
     if (state.animeTag !== 'All') p.set('tag', state.animeTag);
     if (state.format !== 'All') p.set('format', state.format);
     if (state.animeStatus !== 'All') p.set('status', state.animeStatus);
+    if (state.audience !== 'sfw') p.set('audience', state.audience);
   }
   if (state.minRating > 0) p.set('min_score', String(state.minRating * 10));
 
@@ -457,7 +464,13 @@ async function fetchAnime(limit) {
   const json = await res.json();
   if (json.status !== 'ok') throw new Error(json.status_message || 'Anime API error');
 
-  return { items: json.data.items, total: json.data.total, hasNext: json.data.hasNextPage };
+  let items = json.data.items;
+  // AniList can't filter on "has streaming links" server-side, so drop titles
+  // without an official streaming source here (each item carries `streaming`).
+  if (state.source === 'anime' && state.streamingOnly) {
+    items = items.filter((i) => (i.streaming || []).length > 0);
+  }
+  return { items, total: json.data.total, hasNext: json.data.hasNextPage };
 }
 
 // --- Load + render ---
@@ -504,13 +517,19 @@ async function loadResults() {
       state.totalPages = Math.max(1, Math.ceil(r.total / MOVIES_LIMIT));
       els.resultsInfo.textContent = `${fmtNumber(r.total)} movies found`;
     } else if (state.source === 'anime') {
-      // Pull a bigger page when grouping so more of a franchise lands together.
-      const limit = state.groupSeries ? 50 : ANIME_LIMIT;
+      // Pull a bigger page when grouping or streaming-filtering so pages stay full.
+      const limit = (state.groupSeries || state.streamingOnly) ? 50 : ANIME_LIMIT;
       const r = await fetchAnime(limit);
       items = r.items;
       state.hasNext = r.hasNext;
-      state.totalPages = r.total ? Math.max(1, Math.ceil(r.total / limit)) : null;
-      els.resultsInfo.textContent = `${fmtNumber(r.total)} anime found`;
+      if (state.streamingOnly) {
+        // Post-filtered, so the raw total no longer applies.
+        state.totalPages = null;
+        els.resultsInfo.textContent = 'Anime with an official streaming source';
+      } else {
+        state.totalPages = r.total ? Math.max(1, Math.ceil(r.total / limit)) : null;
+        els.resultsInfo.textContent = `${fmtNumber(r.total)} anime found`;
+      }
     } else {
       const [mv, an] = await Promise.all([fetchMovies(ALL_HALF), fetchAnime(ALL_HALF)]);
       items = interleave(mv.items, an.items);
@@ -836,8 +855,11 @@ async function augmentMalScore(malId) {
     const res = await fetch(`/api/mal_score?id=${encodeURIComponent(malId)}`);
     const json = await res.json();
     const slot = document.getElementById('mal-slot');
-    if (slot && json.status === 'ok' && json.data.score) {
-      slot.innerHTML = `<span class="dot">·</span><span class="mal">MAL ${json.data.score}</span>`;
+    if (slot && json.status === 'ok') {
+      let html = '';
+      if (json.data.score) html += `<span class="dot">·</span><span class="mal">MAL ${json.data.score}</span>`;
+      if (json.data.rating) html += `<span class="dot">·</span><span class="age-rating">${esc(json.data.rating)}</span>`;
+      slot.innerHTML = html;
     }
   } catch { /* MAL score is optional */ }
 }
@@ -879,9 +901,15 @@ function bindEvents() {
   els.format.addEventListener('change', () => { state.format = els.format.value; reload(); });
   els.tagSel.addEventListener('change', () => { state.animeTag = els.tagSel.value; reload(); });
   els.statusSel.addEventListener('change', () => { state.animeStatus = els.statusSel.value; reload(); });
+  els.audience.addEventListener('change', () => { state.audience = els.audience.value; reload(); });
   els.groupSeries.addEventListener('click', () => {
     state.groupSeries = !state.groupSeries;
     els.groupSeries.classList.toggle('active', state.groupSeries);
+    reload();
+  });
+  els.streamingOnly.addEventListener('click', () => {
+    state.streamingOnly = !state.streamingOnly;
+    els.streamingOnly.classList.toggle('active', state.streamingOnly);
     reload();
   });
   els.rating.addEventListener('change', () => { state.minRating = Number(els.rating.value); reload(); });
@@ -902,16 +930,18 @@ function bindEvents() {
       query: '', page: 1,
       quality: 'All', movieGenre: 'All', movieSort: 'date_added', order: 'desc',
       animeGenre: 'All', animeTag: 'All', format: 'All', animeStatus: 'All', animeSort: 'popularity',
-      minRating: 0, groupSeries: true,
+      audience: 'sfw', minRating: 0, groupSeries: true, streamingOnly: false,
     });
     els.search.value = '';
     els.quality.value = 'All';
     els.tagSel.value = 'All';
     els.format.value = 'All';
     els.statusSel.value = 'All';
+    els.audience.value = 'sfw';
     els.rating.value = '0';
     els.order.value = 'desc';
     els.groupSeries.classList.add('active');
+    els.streamingOnly.classList.remove('active');
     rebuildDynamicFilters();
     loadResults();
   });
@@ -1052,7 +1082,7 @@ async function loadAnimeTags() {
 // --- Preferences (persist tab / query / filters across a refresh) ---
 const PREFS_KEY = 'media-library:prefs';
 const PREF_KEYS = ['query', 'source', 'page', 'quality', 'movieGenre', 'movieSort',
-  'order', 'animeGenre', 'animeTag', 'format', 'animeStatus', 'animeSort', 'minRating', 'groupSeries'];
+  'order', 'animeGenre', 'animeTag', 'format', 'animeStatus', 'audience', 'animeSort', 'minRating', 'groupSeries', 'streamingOnly'];
 
 function savePrefs() {
   const data = {};
@@ -1075,9 +1105,11 @@ function syncControlsToState() {
   els.quality.value = state.quality;
   els.format.value = state.format;
   els.statusSel.value = state.animeStatus;
+  els.audience.value = state.audience;
   els.rating.value = String(state.minRating);
   els.order.value = state.order;
   els.groupSeries.classList.toggle('active', state.groupSeries);
+  els.streamingOnly.classList.toggle('active', state.streamingOnly);
   rebuildDynamicFilters(); // genre + sort selects, based on source + state
   applySourceUI();         // field visibility + active source button
 }

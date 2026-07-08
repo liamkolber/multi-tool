@@ -62,7 +62,9 @@ const ANIME_FIELDS = `
 // does NOT ignore it. So include each argument only when it has a value.
 function buildAnimeQuery(use) {
   const varDecls = ['$page: Int', '$perPage: Int', '$sort: [MediaSort]'];
-  const mediaArgs = ['type: ANIME', 'sort: $sort', 'isAdult: false'];
+  const mediaArgs = ['type: ANIME', 'sort: $sort'];
+  if (use.adult === 'adult') mediaArgs.push('isAdult: true');       // 18+ only
+  else if (use.adult !== 'all') mediaArgs.push('isAdult: false');   // default: SFW
   if (use.search) { varDecls.push('$search: String'); mediaArgs.push('search: $search'); }
   if (use.genre) { varDecls.push('$genre: String'); mediaArgs.push('genre: $genre'); }
   if (use.tag) { varDecls.push('$tag: String'); mediaArgs.push('tag: $tag'); }
@@ -280,6 +282,7 @@ async function handleAnimeSearch(res, url) {
   if (statusVal != null) variables.status = statusVal;
   if (scoreGreater != null) variables.scoreGreater = scoreGreater;
 
+  const audience = q.get('audience'); // 'sfw' (default) | 'adult' | 'all'
   const query = buildAnimeQuery({
     search: searchVal != null,
     genre: genreVal != null,
@@ -287,9 +290,11 @@ async function handleAnimeSearch(res, url) {
     format: formatVal != null,
     status: statusVal != null,
     score: scoreGreater != null,
+    adult: audience === 'adult' ? 'adult' : (audience === 'all' ? 'all' : 'sfw'),
   });
 
-  const cacheKey = 'anime:' + JSON.stringify(variables);
+  // audience changes the query (isAdult) but not `variables`, so key on it too.
+  const cacheKey = 'anime:' + (audience || 'sfw') + ':' + JSON.stringify(variables);
   const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'X-Cache': 'HIT' });
@@ -365,9 +370,11 @@ async function handleMalScore(res, url) {
     }
     const raw = await upstream.json();
     const d = raw.data || {};
+    // MAL's content rating, e.g. "PG-13 - Teens 13 or older" -> "PG-13".
+    const rating = d.rating ? String(d.rating).split(' - ')[0] : null;
     const body = JSON.stringify({
       status: 'ok',
-      data: { score: d.score ?? null, url: d.url || `https://myanimelist.net/anime/${id}` },
+      data: { score: d.score ?? null, rating, url: d.url || `https://myanimelist.net/anime/${id}` },
     });
     malScoreCache.set(id, body);
     res.writeHead(200, { 'Content-Type': MIME['.json'], 'X-Cache': 'MISS' });

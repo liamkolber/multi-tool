@@ -77,7 +77,9 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
   Anime / ★ Watchlist toggle
 - 🎚️ Movie filters (quality, genre, rating, sort) and anime filters (genre,
   **tag** (AniList's full tag set, grouped by category), format,
-  **status incl. "Airing now"**, score, sort), shown per source
+  **status incl. "Airing now"**, **audience (all-ages / 18+ / all)**, score,
+  sort), plus a **▶ Streamable** toggle (only titles with an official streaming
+  source), shown per source
 - 🖼️ Unified poster grid with rating badges, a source badge, and a ☆ bookmark
   on every card
 - 🗂️ **Group series** toggle (Anime tab) — collapse same-franchise entries
@@ -89,8 +91,8 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
 - 🎬 Movie detail: synopsis, IMDb, per-quality magnet + `.torrent` rows
 - 🌸 Anime detail: synopsis, studio, tags, **characters + voice actors**,
   **related entries** (prequels/sequels/side stories — click to open), official
-  "where to watch" streaming links, plus a **MyAnimeList link + score** (via
-  Jikan) alongside the AniList score
+  "where to watch" streaming links, plus a **MyAnimeList link, score, and
+  content rating** (G/PG-13/R…, via Jikan) alongside the AniList score
 - ⌨️ Keyboard friendly (open cards with Enter, close the modal with Esc)
 
 ## Notes
