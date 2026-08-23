@@ -5,3 +5,4 @@ node_modules/
 downloads/
 bin/
 .dl-config.json
+.dl-jobs.json

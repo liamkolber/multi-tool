@@ -1293,6 +1293,11 @@ function dlRenderTools() {
       separate video and audio streams that need merging. ${win
       ? 'Run <code>winget install Gyan.FFmpeg</code>'
       : 'Install it with <code>brew install ffmpeg</code>'} and re-check.`;
+  } else if (dlTools.deno && !dlTools.deno.found) {
+    // Not fatal, but it quietly costs you the formats this app exists to get.
+    body = `<strong>No JavaScript runtime found.</strong> YouTube extraction without one is deprecated and
+      <em>some formats may be missing</em> — including, sometimes, the highest one. Run
+      <code>npm run get-tools</code> to add Deno, then re-check.`;
   }
 
   if (!body) { dl.tools.hidden = true; return; }

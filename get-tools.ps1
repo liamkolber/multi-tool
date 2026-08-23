@@ -60,4 +60,33 @@ if (Test-Path $ffmpeg) {
     }
 }
 
+# --- deno: yt-dlp's JavaScript runtime for YouTube extraction ---
+# Without one, yt-dlp warns that "some formats may be missing" — the best
+# stream can silently drop out of the list, which defeats the point.
+$deno = Join-Path $BinDir 'deno.exe'
+if (Test-Path $deno) {
+    Write-Host "  deno    already present, skipping" -ForegroundColor DarkGray
+} else {
+    $zip = Join-Path $env:TEMP 'deno-win.zip'
+    $tmp = Join-Path $env:TEMP 'deno-extract'
+    try {
+        Get-File 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip' $zip 'deno (~40 MB)'
+        if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        $found = Get-ChildItem -Path $tmp -Filter 'deno.exe' -Recurse | Select-Object -First 1
+        if ($found) {
+            Copy-Item $found.FullName $deno -Force
+            Write-Host "  deno    OK" -ForegroundColor Green
+        } else {
+            Write-Host "  deno    FAILED - deno.exe not found in the archive" -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "  deno    FAILED - $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "          optional; without it some YouTube formats may be missing" -ForegroundColor DarkGray
+    } finally {
+        Remove-Item $zip -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "`nDone. Restart the server (or hit Re-check in the Download tab).`n"

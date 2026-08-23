@@ -933,10 +933,20 @@ async function resolveTool(name) {
 
 async function getTools(refresh) {
   if (!toolCache || refresh) {
-    const [ytdlp, ffmpeg] = await Promise.all([resolveTool('yt-dlp'), resolveTool('ffmpeg')]);
-    toolCache = { ytdlp, ffmpeg };
+    const [ytdlp, ffmpeg, deno] = await Promise.all([
+      resolveTool('yt-dlp'), resolveTool('ffmpeg'), resolveTool('deno'),
+    ]);
+    toolCache = { ytdlp, ffmpeg, deno };
   }
   return toolCache;
+}
+
+// YouTube extraction without a JavaScript runtime is deprecated, and yt-dlp
+// warns that "some formats may be missing" — which for a tool whose whole point
+// is max quality means the best stream can silently vanish from the list. Deno
+// is the runtime yt-dlp enables by default; point it at ours when it's in bin/.
+function jsRuntimeArgs(tools) {
+  return tools.deno.found ? ['--js-runtimes', `deno:${tools.deno.path}`] : [];
 }
 
 // --- Format selection ---
@@ -1053,7 +1063,8 @@ async function handleDlProbe(res, url) {
     return sendJson(res, 503, { status: 'error', status_message: 'yt-dlp is not installed.', missing: 'yt-dlp' });
   }
 
-  const child = spawn(tools.ytdlp.path, ['-J', '--no-warnings', '--flat-playlist', '--', target.url], {
+  const probeArgs = ['-J', '--no-warnings', '--flat-playlist', ...jsRuntimeArgs(tools), '--', target.url];
+  const child = spawn(tools.ytdlp.path, probeArgs, {
     windowsHide: true,
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   });
@@ -1113,6 +1124,35 @@ const JOB_LIVE = new Set(['picking', 'starting', 'downloading', 'merging']);
 function publicJob(job) {
   const { child, picker, ...rest } = job;
   return rest;
+}
+
+// Finished downloads outlive the server so a restart doesn't wipe the list —
+// losing the history (and the Show-in-folder buttons with it) every time the
+// server bounces is worse than the cost of one small JSON file.
+const JOBS_PATH = join(__dirname, '.dl-jobs.json');
+let jobSaveTimer = null;
+
+async function loadJobHistory() {
+  try {
+    const saved = JSON.parse(await readFile(JOBS_PATH, 'utf8'));
+    if (!Array.isArray(saved)) return;
+    for (const j of saved.slice(-JOBS_KEEP)) {
+      if (!j || !j.id || JOB_LIVE.has(j.status)) continue; // a live job can't survive a restart
+      jobs.set(String(j.id), { ...j, child: null, picker: null });
+      jobSeq = Math.max(jobSeq, Number(j.id) || 0); // keep new ids from colliding
+    }
+  } catch { /* first run, or the file was hand-edited — start clean */ }
+}
+
+function saveJobHistory() {
+  clearTimeout(jobSaveTimer);
+  jobSaveTimer = setTimeout(async () => {
+    const finished = [...jobs.values()].filter((j) => !JOB_LIVE.has(j.status)).map(publicJob);
+    try {
+      await writeFile(JOBS_PATH, `${JSON.stringify(finished.slice(-JOBS_KEEP), null, 2)}\n`);
+    } catch { /* history is a convenience, never fail a download over it */ }
+  }, 400);
+  if (jobSaveTimer.unref) jobSaveTimer.unref();
 }
 
 function broadcast(job) {
@@ -1225,6 +1265,7 @@ async function runJob(job, opts, tools, dest) {
     if (container) args.push('--merge-output-format', container);
   }
   if (tools.ffmpeg.found) args.push('--ffmpeg-location', tools.ffmpeg.path);
+  args.push(...jsRuntimeArgs(tools));
   args.push('--', job.url); // '--' so a URL starting with '-' can't be read as a flag
 
   // Without this yt-dlp writes its log in the Windows console codepage, so a
@@ -1320,6 +1361,7 @@ async function runJob(job, opts, tools, dest) {
         if (!JOB_LIVE.has(j.status)) jobs.delete(key);
       }
     }
+    saveJobHistory();
   });
 }
 
@@ -1387,12 +1429,21 @@ async function handleDlStart(req, res) {
   const picked = await pickDestination(mode, suggested, (child) => { job.picker = child; });
   job.picker = null;
 
-  if (job.status === 'cancelled') return;   // cancelled from the UI while picking
+  // Cancelled from the UI while the dialog was open. No child ever spawns, so
+  // this has to record and persist the job itself.
+  if (job.status === 'cancelled') {
+    job.finishedAt = job.finishedAt || Date.now();
+    broadcast(job);
+    return saveJobHistory();
+  }
   if (picked.cancelled || picked.error) {
+    // No child is ever spawned here, so the close handler that normally
+    // persists a job never runs — save it explicitly.
     job.status = picked.error ? 'error' : 'cancelled';
     job.error = picked.error || null;
     job.finishedAt = Date.now();
-    return broadcast(job);
+    broadcast(job);
+    return saveJobHistory();
   }
 
   await rememberSaveDir(picked.dir || dirname(picked.path));
@@ -1495,7 +1546,7 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, HOST, async () => {
-  await loadDlConfig();
+  await Promise.all([loadDlConfig(), loadJobHistory()]);
   const tools = await getTools();
   const missing = (what) => `not found — ${what}`;
   console.log(`\n  Media Library`);
@@ -1503,5 +1554,6 @@ server.listen(PORT, HOST, async () => {
   console.log(`  upstream:  ${UPSTREAM}`);
   console.log(`  downloads: ${saveDir()}`);
   console.log(`  yt-dlp:    ${tools.ytdlp.found ? tools.ytdlp.version : missing('see the Download tab')}`);
-  console.log(`  ffmpeg:    ${tools.ffmpeg.found ? 'found' : missing('needed above 720p')}\n`);
+  console.log(`  ffmpeg:    ${tools.ffmpeg.found ? 'found' : missing('needed above 720p')}`);
+  console.log(`  deno:      ${tools.deno.found ? 'found' : missing('some YouTube formats may be missing')}\n`);
 });

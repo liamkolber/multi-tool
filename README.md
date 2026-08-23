@@ -44,14 +44,26 @@ powershell -ExecutionPolicy Bypass -File install-shortcut.ps1
 
 This drops a **Media Library** shortcut (with a generated icon) on your Desktop and
 in the Start Menu (searchable by typing "Media"; right-click it there to pin to
-Start or the taskbar). Double-clicking it runs `launch.ps1`, which:
+Start or the taskbar). Double-clicking it runs `launch.vbs`, which:
 
-1. starts the server if it isn't already running (in a minimized
-   *Media Library Server* window), then
-2. opens <http://localhost:8080> in your default browser.
+1. starts the server with **no console window at all**,
+2. puts a **Media Library icon in the system tray**, then
+3. opens <http://localhost:8080> in your default browser.
 
-**To stop the app,** close the minimized *Media Library Server* window. Re-run
-`install-shortcut.ps1` if you ever move the project folder.
+Right-click the tray icon for Open, Open downloads folder, View server log,
+Restart server, and **Quit** — Quit is how you stop the app now. Double-clicking
+the icon reopens it in the browser. Launching the shortcut a second time just
+reopens the browser rather than stacking up a second server and icon.
+
+> Windows 11 hides new tray icons behind the `^` chevron. Drag it onto the
+> taskbar once to keep it in view.
+
+With no console, server output goes to `server.log` (gitignored) — **View server
+log** opens it. To watch it live instead, run `node server.mjs` in a terminal;
+that path still works and prints the usual banner.
+
+Re-run `install-shortcut.ps1` if you ever move the project folder, or to
+re-point an older shortcut at the tray launcher.
 
 ## Downloading
 
@@ -69,20 +81,30 @@ The extension you choose in the dialog wins: naming the file `.mp4` gets you MP4
 even with **Prefer MP4** unticked. Playlists ask for a folder rather than a file
 name, and on macOS/Linux the dialog is a folder picker throughout.
 
-It needs two binaries, neither bundled:
+Every probe also offers the video's **thumbnail** at its largest available size:
+**View** opens it in a new tab, **Download** saves it through the same dialog.
+It is kept in whatever format the host serves (usually `.webp` from YouTube) —
+re-encoding to `.jpg` would only cost quality.
+
+Finished downloads are listed with their thumbnail and survive a server restart
+(kept in a gitignored `.dl-jobs.json`), so **Show in folder** keeps working after
+a bounce.
+
+It leans on three binaries, none bundled:
 
 | | | |
 |---|---|---|
 | **yt-dlp** | required | does the extraction and downloading |
 | **ffmpeg** | for >720p | YouTube serves video and audio separately above 720p, so they must be merged |
+| **deno** | recommended | yt-dlp's JavaScript runtime; YouTube extraction without one is deprecated and some formats may be missing |
 
-Get both into a gitignored `bin/` folder next to the server:
+Get all three into a gitignored `bin/` folder next to the server:
 
 ```powershell
 npm run get-tools
 ```
 
-Or install them system-wide instead — `winget install yt-dlp.yt-dlp` and
+Or install them system-wide instead — `winget install yt-dlp.yt-dlp`, `winget install DenoLand.Deno`, and
 `winget install Gyan.FFmpeg`. Either way the tab picks them up (`bin/` first,
 then `PATH`); hit **Re-check** after installing. Without ffmpeg the tab still
 works, capped at 720p, and says so.
@@ -126,7 +148,7 @@ YTS_API=https://yts.mx/api/v2 node server.mjs
 ## Features
 
 - 🔍 One search box across movies/TV **and** anime, with an All / Movies & TV /
-  Anime / ★ Watchlist / ⬇ Download toggle
+  Anime / ★ Watchlist / ⬇ Download nav in a collapsible sidebar
 - 🌐 Cross-language titles: anime search matches English / romaji / native
   (AniList does this natively); movie search runs an IMDb-id lookup **alongside**
   YTS on every text search and merges the results (deduped, page 1), so an

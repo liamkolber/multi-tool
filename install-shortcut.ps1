@@ -5,9 +5,9 @@
 $ErrorActionPreference = 'Stop'
 
 $Root         = $PSScriptRoot
-$LauncherPath = Join-Path $Root 'launch.ps1'
+$LauncherPath = Join-Path $Root 'launch.vbs'
 $IcoPath      = Join-Path $Root 'media.ico'
-$PsExe        = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$WScriptExe   = Join-Path $env:SystemRoot 'System32\wscript.exe'
 
 # --- Generate a themed icon: blue rounded square with a white play triangle ---
 try {
@@ -51,11 +51,13 @@ $shell = New-Object -ComObject WScript.Shell
 
 function New-AppShortcut([string]$LnkPath) {
     $sc = $shell.CreateShortcut($LnkPath)
-    $sc.TargetPath       = $PsExe
-    $sc.Arguments        = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$LauncherPath`""
+    # wscript runs the launcher with no console at all, so the app appears only
+    # as a tray icon. The window style below is irrelevant to it.
+    $sc.TargetPath       = $WScriptExe
+    $sc.Arguments        = "`"$LauncherPath`""
     $sc.WorkingDirectory = $Root
-    $sc.WindowStyle      = 7   # minimized
-    $sc.Description      = 'Start Media Library and open it in your browser'
+    $sc.WindowStyle      = 1
+    $sc.Description      = 'Start Media Library in the tray and open it in your browser'
     if ($IcoPath -and (Test-Path $IcoPath)) { $sc.IconLocation = "$IcoPath,0" }
     $sc.Save()
     Write-Host "Shortcut created: $LnkPath"

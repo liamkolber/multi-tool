@@ -1,43 +1,16 @@
-# YTS Library launcher.
-# Starts the local server (only if it isn't already running), waits for it to be
-# ready, then opens the app in your default browser.
-# Run with -NoBrowse to start the server without opening the browser.
+# Media Library launcher — terminal entry point.
+#
+# The app lives in the system tray now, so this just hands off to tray.ps1,
+# which starts the server with no console window and owns the tray icon.
+# It stays in the foreground running the tray's message loop; close it with the
+# tray icon's Quit, or Ctrl+C here.
+#
+# The Desktop / Start Menu shortcut uses launch.vbs instead, which does the same
+# thing without any window at all.
+#
+# Run with -NoBrowse to start without opening the browser.
+# To watch server output live instead, just run:  node server.mjs
 
 param([switch]$NoBrowse)
 
-$ErrorActionPreference = 'SilentlyContinue'
-
-$Port = 8080
-$Url  = "http://localhost:$Port"
-$Root = $PSScriptRoot
-
-function Test-Port([int]$p) {
-    $client = New-Object System.Net.Sockets.TcpClient
-    try   { $client.Connect('127.0.0.1', $p); return $true }
-    catch { return $false }
-    finally { $client.Dispose() }
-}
-
-if (-not (Test-Port $Port)) {
-    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Add-Type -AssemblyName System.Windows.Forms
-        [void][System.Windows.Forms.MessageBox]::Show(
-            "Node.js was not found on your PATH.`r`nInstall it from https://nodejs.org and run this again.",
-            'Media Library')
-        return
-    }
-
-    # Launch the server in its own minimized window.
-    # (Close that "Media Library Server" window to stop the app.)
-    Start-Process -FilePath $env:ComSpec `
-        -ArgumentList '/c "title Media Library Server & node server.mjs"' `
-        -WorkingDirectory $Root -WindowStyle Minimized
-
-    # Wait up to ~15s for the server to start accepting connections.
-    for ($i = 0; $i -lt 50; $i++) {
-        if (Test-Port $Port) { break }
-        Start-Sleep -Milliseconds 300
-    }
-}
-
-if (-not $NoBrowse) { Start-Process $Url }
+& (Join-Path $PSScriptRoot 'tray.ps1') @PSBoundParameters
