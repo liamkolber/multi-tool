@@ -8,95 +8,138 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand">
-        <span class="brand-mark">🎬</span>
-        <span class="brand-name">Media Library</span>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-head">
+        <div class="brand">
+          <span class="brand-mark">🎬</span>
+          <span class="brand-name">Media Library</span>
+        </div>
+        <button class="side-toggle" id="side-toggle" type="button"
+          aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">‹</button>
       </div>
 
-      <div class="search">
-        <input
-          id="search"
-          type="search"
-          placeholder="Search movies, TV & anime…"
-          autocomplete="off"
-          spellcheck="false"
-        />
+      <nav class="source-toggle" id="source-toggle" role="tablist" aria-label="Library">
+        <button class="src-btn active" data-src="all" type="button" title="All">
+          <span class="src-icon">▦</span><span class="src-label">All</span>
+        </button>
+        <button class="src-btn" data-src="movies" type="button" title="Movies &amp; TV">
+          <span class="src-icon">🎬</span><span class="src-label">Movies &amp; TV</span>
+        </button>
+        <button class="src-btn" data-src="anime" type="button" title="Anime">
+          <span class="src-icon">🌸</span><span class="src-label">Anime</span>
+        </button>
+        <button class="src-btn" data-src="watchlist" type="button" title="Watchlist">
+          <span class="src-icon">★</span><span class="src-label">Watchlist</span>
+        </button>
+        <button class="src-btn" data-src="download" type="button" title="Download">
+          <span class="src-icon">⬇</span><span class="src-label">Download</span>
+        </button>
+      </nav>
+
+      <div class="filters" id="filters">
+        <div class="filters-head">Filters</div>
+
+        <label class="field" data-for="movies">
+          <span>Quality</span>
+          <select id="quality"></select>
+        </label>
+        <label class="field" data-for="movies">
+          <span>Popular</span>
+          <select id="movie-popular"></select>
+        </label>
+        <label class="field" data-for="movies">
+          <span>Age rating</span>
+          <select id="movie-rating"></select>
+        </label>
+        <label class="field" data-for="movies anime">
+          <span>Genre</span>
+          <select id="genre"></select>
+        </label>
+        <label class="field" data-for="anime">
+          <span>Tag</span>
+          <select id="anime-tag"></select>
+        </label>
+        <label class="field" data-for="anime">
+          <span>Format</span>
+          <select id="format"></select>
+        </label>
+        <label class="field" data-for="anime">
+          <span>Status</span>
+          <select id="anime-status"></select>
+        </label>
+        <label class="field" data-for="anime">
+          <span>Rating</span>
+          <select id="anime-rating"></select>
+        </label>
+        <label class="field" data-for="movies anime">
+          <span>Sort by</span>
+          <select id="sort"></select>
+        </label>
+        <label class="field" data-for="movies">
+          <span>Order</span>
+          <select id="order"></select>
+        </label>
+
+        <button class="pill" id="group-series" type="button" data-for="anime"
+          title="Collapse same-series entries into one card">⧉ Group series</button>
+        <button class="pill" id="streaming-only" type="button" data-for="anime"
+          title="Only show titles with an official streaming source">▶ Streamable</button>
+
+        <button id="reset" class="btn-ghost" type="button" title="Reset all filters">Reset</button>
       </div>
+    </aside>
+
+    <div class="main-col">
+      <header class="topbar">
+        <div class="search">
+          <input
+            id="search"
+            type="search"
+            placeholder="Search movies, TV &amp; anime…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- Downloader (⬇ Download tab) -->
+        <section id="downloader" class="downloader" hidden>
+          <div id="dl-tools" class="dl-notice" hidden></div>
+
+          <form id="dl-form" class="dl-bar">
+            <input id="dl-url" type="url" placeholder="Paste a video URL…" autocomplete="off" spellcheck="false" />
+            <button id="dl-fetch" class="btn btn-primary" type="submit">Fetch</button>
+          </form>
+
+          <div id="dl-error" class="dl-notice error" hidden></div>
+          <div id="dl-probe" class="dl-probe" hidden></div>
+
+          <div class="dl-jobs-head">
+            <h2 id="dl-jobs-title" class="dl-h2" hidden>Downloads</h2>
+            <span id="dl-save-dir" class="dl-save-dir" hidden></span>
+            <button id="dl-open-folder" class="btn-ghost" type="button" hidden>Open folder</button>
+          </div>
+          <div id="dl-jobs" class="dl-jobs"></div>
+        </section>
+
+        <div class="results-bar">
+          <span id="results-info" class="results-info">Loading…</span>
+        </div>
+
+        <div id="grid" class="grid" aria-live="polite"></div>
+
+        <div id="status" class="status" hidden></div>
+
+        <nav class="pager" aria-label="Pagination">
+          <button id="prev" class="btn" type="button">‹ Prev</button>
+          <span id="page-info" class="page-info">Page 1</span>
+          <button id="next" class="btn" type="button">Next ›</button>
+        </nav>
+      </main>
     </div>
-
-    <div class="filters">
-      <div class="source-toggle" id="source-toggle" role="tablist" aria-label="Library">
-        <button class="src-btn active" data-src="all" type="button">All</button>
-        <button class="src-btn" data-src="movies" type="button">Movies &amp; TV</button>
-        <button class="src-btn" data-src="anime" type="button">Anime</button>
-        <button class="src-btn" data-src="watchlist" type="button">★ Watchlist</button>
-      </div>
-
-      <label class="field" data-for="movies">
-        <span>Quality</span>
-        <select id="quality"></select>
-      </label>
-      <label class="field" data-for="movies">
-        <span>Popular</span>
-        <select id="movie-popular"></select>
-      </label>
-      <label class="field" data-for="movies">
-        <span>Age rating</span>
-        <select id="movie-rating"></select>
-      </label>
-      <label class="field" data-for="movies anime">
-        <span>Genre</span>
-        <select id="genre"></select>
-      </label>
-      <label class="field" data-for="anime">
-        <span>Tag</span>
-        <select id="anime-tag"></select>
-      </label>
-      <label class="field" data-for="anime">
-        <span>Format</span>
-        <select id="format"></select>
-      </label>
-      <label class="field" data-for="anime">
-        <span>Status</span>
-        <select id="anime-status"></select>
-      </label>
-      <label class="field" data-for="anime">
-        <span>Rating</span>
-        <select id="anime-rating"></select>
-      </label>
-      <button class="pill" id="group-series" type="button" data-for="anime"
-        title="Collapse same-series entries into one card">⧉ Group series</button>
-      <button class="pill" id="streaming-only" type="button" data-for="anime"
-        title="Only show titles with an official streaming source">▶ Streamable</button>
-      <label class="field" data-for="movies anime">
-        <span>Sort by</span>
-        <select id="sort"></select>
-      </label>
-      <label class="field" data-for="movies">
-        <span>Order</span>
-        <select id="order"></select>
-      </label>
-      <button id="reset" class="btn-ghost" type="button" title="Reset all filters">Reset</button>
-    </div>
-  </header>
-
-  <main class="content">
-    <div class="results-bar">
-      <span id="results-info" class="results-info">Loading…</span>
-    </div>
-
-    <div id="grid" class="grid" aria-live="polite"></div>
-
-    <div id="status" class="status" hidden></div>
-
-    <nav class="pager" aria-label="Pagination">
-      <button id="prev" class="btn" type="button">‹ Prev</button>
-      <span id="page-info" class="page-info">Page 1</span>
-      <button id="next" class="btn" type="button">Next ›</button>
-    </nav>
-  </main>
+  </div>
 
   <!-- Movie detail modal -->
   <div id="modal" class="modal" hidden>

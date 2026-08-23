@@ -5,7 +5,8 @@
   "type": "module",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "get-tools": "powershell -ExecutionPolicy Bypass -File get-tools.ps1"
   },
   "engines": {
     "node": ">=18"
