@@ -179,6 +179,26 @@ goes to `oauth.reddit.com` as you.
 
 ### One-time setup
 
+> **Reddit closed this off to new apps (checked 2026-08-26).** Creating a Data
+> API app now requires a *valid moderation use case*. Without one, **create app**
+> at `/prefs/apps` silently does nothing: the `POST` to `updateapp` returns
+> `200` with `"success": true`, creates no app, and renders only a link to the
+> Responsible Builder Policy into the form's status line. There is no error
+> message, and it is not a captcha, browser, extension or email-verification
+> problem — it fails identically in a clean browser with a verified account.
+> Client IDs issued before the change keep working; new ones are gated.
+>
+> The only sanctioned route is a **Data Access Request**:
+> <https://support.reddithelp.com/hc/en-us/requests/new> → *Data Access Request*
+> → *I'm a developer* → *"I'm a developer and want to build a Reddit App that
+> does not work in the Devvit ecosystem."* Devvit itself is no substitute here:
+> it builds subreddit-installed apps that run inside Reddit, and offers no way
+> to read or modify your own cross-subreddit saved/voted history from a local
+> client. Request submitted 2026-08-26; awaiting a response.
+>
+> The steps below are unchanged and still correct — they just can't be completed
+> until Reddit issues a client ID.
+
 Reddit requires each client to be registered, so the tool walks you through it
 the first time you open it:
 
