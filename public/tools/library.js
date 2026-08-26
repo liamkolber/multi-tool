@@ -16,6 +16,7 @@ const TEMPLATE = `
   <div class="lb-bar">
     <button id="lb-pick" class="btn btn-primary" type="button">Choose a folder…</button>
     <input id="lb-root" type="text" placeholder="E:\\Movies" autocomplete="off" spellcheck="false" />
+    <label class="lb-toggle"><input type="checkbox" id="lb-images" /> Include images</label>
     <button id="lb-scan" class="btn-ghost" type="button">Scan</button>
     <button id="lb-cancel" class="btn-ghost" type="button" hidden>Cancel</button>
   </div>
@@ -65,6 +66,7 @@ function cacheEls() {
     pick: $('lb-pick'),
     root: $('lb-root'),
     scan: $('lb-scan'),
+    images: $('lb-images'),
     cancel: $('lb-cancel'),
     error: $('lb-error'),
     progress: $('lb-progress'),
@@ -96,17 +98,21 @@ let lbFilter = 'all';
 let lbQuery = '';
 let lbSort = 'name';
 let lbThumbs = true;
+let lbImages = false;
 
 const LB_PREFS_KEY = 'multitool:library';
 
 function lbSavePrefs() {
-  try { localStorage.setItem(LB_PREFS_KEY, JSON.stringify({ thumbs: lbThumbs })); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(LB_PREFS_KEY, JSON.stringify({ thumbs: lbThumbs, images: lbImages }));
+  } catch { /* ignore */ }
 }
 
 function lbLoadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(LB_PREFS_KEY));
     if (saved && typeof saved.thumbs === 'boolean') lbThumbs = saved.thumbs;
+    if (saved && typeof saved.images === 'boolean') lbImages = saved.images;
   } catch { /* keep the default */ }
 }
 
@@ -510,7 +516,7 @@ async function lbStartScan() {
     const res = await fetch('/api/library/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root }),
+      body: JSON.stringify({ root, includeImages: lb.images.checked }),
     });
     const json = await res.json();
     if (json.status !== 'ok') return lbShowError(json.status_message || 'Could not start the scan.');
@@ -557,6 +563,12 @@ function lbConnect() {
     onMessage: (p) => {
       lbRenderProgress(p);
       if (p.error) lbShowError(p.error);
+      // Hitting the cap means files were left out, which makes every total on
+      // screen an undercount. Saying so beats quietly being wrong.
+      if (p.truncated) {
+        lbShowError(`Stopped at the ${fmtNumber(p.limit)} file limit — some files were not indexed.${
+          lbImages ? ' Turning off "Include images" will usually bring it back under.' : ''}`);
+      }
       // A scan that just finished has a new index waiting.
       if (lbScanning && !p.scanning) lbLoadIndex();
       lbScanning = !!p.scanning;
@@ -576,6 +588,8 @@ function bindLibrary() {
   }, 120));
 
   lb.sort.addEventListener('change', () => { lbSort = lb.sort.value; lbRenderList(); });
+
+  lb.images.addEventListener('change', () => { lbImages = lb.images.checked; lbSavePrefs(); });
 
   lb.thumbs.addEventListener('change', () => {
     lbThumbs = lb.thumbs.checked;
@@ -638,6 +652,7 @@ export const tool = {
     cacheEls();
     lbLoadPrefs();
     lb.thumbs.checked = lbThumbs;
+    lb.images.checked = lbImages;
     bindLibrary();
     lbLoadIndex();
     lbConnect();

@@ -222,7 +222,11 @@ What it surfaces:
   library of thousands costs nothing until you actually look at it. The cache key
   folds in size and mtime, so an edited file gets a fresh frame rather than a
   stale one. Toggle them off in the controls if you would rather have the density
-- **Images** — indexed by size, with a thumbnail like anything else
+- **Images** — only when **Include images** is ticked before scanning. They are
+  off by default because a media folder can hold tens of thousands of them, each
+  costing an ffmpeg process to probe, and because they count against the 20,000
+  file index limit and can push the videos out of it. Folder sizes count them
+  either way
 - **Archives** — `.zip`, `.rar`, `.7z`, `.iso` and friends, indexed by size but
   never handed to ffmpeg, since there is nothing in one for it to read
 - **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)
