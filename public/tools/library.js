@@ -21,6 +21,8 @@ const TEMPLATE = `
     <button id="lb-cancel" class="btn-ghost" type="button" hidden>Cancel</button>
   </div>
 
+  <div id="lb-recent" class="lb-recent" hidden></div>
+
   <div id="lb-error" class="lb-notice error" hidden></div>
   <div id="lb-progress" class="lb-progress" hidden></div>
 
@@ -60,6 +62,11 @@ const TEMPLATE = `
     <label class="lb-toggle"><input type="checkbox" id="lb-fd-top" /> Top level only</label>
   </div>
 
+  <div id="lb-blank" class="lb-blank" hidden>
+    Nothing scanned yet. Choose a folder above and the whole tree gets read —
+    sizes, running times, resolutions, subtitles and duplicates.
+  </div>
+
   <div id="lb-list" class="lb-list"></div>
   <div id="lb-folders" class="lb-list" hidden></div>`;
 
@@ -82,6 +89,8 @@ function cacheEls() {
     list: $('lb-list'),
     views: $('lb-views'),
     trash: $('lb-trash'),
+    recent: $('lb-recent'),
+    blank: $('lb-blank'),
     fdControls: $('lb-fd-controls'),
     fdSearch: $('lb-fd-search'),
     fdSort: $('lb-fd-sort'),
@@ -104,13 +113,35 @@ let lbQuery = '';
 let lbSort = 'name';
 let lbThumbs = true;
 let lbImages = false;
+let lbRecent = [];
 
 const LB_PREFS_KEY = 'multitool:library';
 
 function lbSavePrefs() {
   try {
-    localStorage.setItem(LB_PREFS_KEY, JSON.stringify({ thumbs: lbThumbs, images: lbImages }));
+    localStorage.setItem(LB_PREFS_KEY, JSON.stringify({
+      thumbs: lbThumbs, images: lbImages, recent: lbRecent,
+    }));
   } catch { /* ignore */ }
+}
+
+// Folders scanned before, most recent first. Kept here rather than on the
+// server because the server only ever remembers the one index it is holding —
+// switching between two libraries would otherwise mean retyping a path.
+const RECENT_KEEP = 5;
+
+function lbRememberRoot(root) {
+  if (!root) return;
+  lbRecent = [root, ...lbRecent.filter((r) => r.toLowerCase() !== root.toLowerCase())].slice(0, RECENT_KEEP);
+  lbSavePrefs();
+  lbRenderRecent();
+}
+
+function lbRenderRecent() {
+  if (!lbRecent.length) { lb.recent.hidden = true; lb.recent.innerHTML = ''; return; }
+  lb.recent.hidden = false;
+  lb.recent.innerHTML = '<span class="lb-recent-label">Recent:</span>'
+    + lbRecent.map((r) => `<button class="lb-chip" type="button" data-recent="${esc(r)}" title="${esc(r)}">${esc(r)}</button>`).join('');
 }
 
 function lbLoadPrefs() {
@@ -118,6 +149,7 @@ function lbLoadPrefs() {
     const saved = JSON.parse(localStorage.getItem(LB_PREFS_KEY));
     if (saved && typeof saved.thumbs === 'boolean') lbThumbs = saved.thumbs;
     if (saved && typeof saved.images === 'boolean') lbImages = saved.images;
+    if (saved && Array.isArray(saved.recent)) lbRecent = saved.recent.filter((r) => typeof r === 'string');
   } catch { /* keep the default */ }
 }
 
@@ -519,7 +551,9 @@ async function lbDismissTrash() {
 
 function lbRenderAll() {
   lbDupes = lbDuplicates(lbFiles);
-  lb.views.hidden = lbFiles.length === 0 && lbFolders.length === 0;
+  const empty = lbFiles.length === 0 && lbFolders.length === 0;
+  lb.views.hidden = empty;
+  lb.blank.hidden = !empty;
   lbRenderTrash();
   lbRenderStats();
   lbRenderFilters();
@@ -557,7 +591,9 @@ async function lbLoadIndex() {
       lbFolders = json.data.folders || [];
       lbTrash = json.data.trash || [];
       lbRoot = json.data.root;
-      if (lbRoot) lb.root.value = lbRoot;
+      // The server index outranks whatever was remembered locally, and its root
+      // is worth adding to the recents so the chip is there next time.
+      if (lbRoot) { lb.root.value = lbRoot; lbRememberRoot(lbRoot); }
       lbRenderAll();
     }
   } catch { /* the event stream will catch us up */ }
@@ -589,6 +625,7 @@ async function lbStartScan() {
     });
     const json = await res.json();
     if (json.status !== 'ok') return lbShowError(json.status_message || 'Could not start the scan.');
+    lbRememberRoot(root);
     lbRenderProgress(json.data);
   } catch {
     lbShowError('Could not reach the server.');
@@ -719,6 +756,13 @@ function bindLibrary() {
     lbRenderList();
   });
 
+  lb.recent.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-recent]');
+    if (!chip) return;
+    lb.root.value = chip.dataset.recent;
+    lbStartScan();
+  });
+
   lb.trash.addEventListener('click', (e) => {
     if (e.target.closest('[data-trash-dismiss]')) { lbDismissTrash(); return; }
     const restore = e.target.closest('[data-restore]');
@@ -798,6 +842,8 @@ export const tool = {
     lbLoadPrefs();
     lb.thumbs.checked = lbThumbs;
     lb.images.checked = lbImages;
+    lbRenderRecent();
+    if (lbRecent.length) lb.root.value = lbRecent[0];
     bindLibrary();
     lbLoadIndex();
     lbConnect();

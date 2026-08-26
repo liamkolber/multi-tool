@@ -262,6 +262,11 @@ you can undo; removing a tree is a different kind of afternoon.
 Folder totals and the file index are adjusted as files come and go, so nothing
 needs rescanning after a delete or a restore.
 
+The last five folders you scanned appear as chips under the bar — one click
+rescans one, which is the usual case when you keep a couple of libraries. The
+box is prefilled with the most recent on arrival, so the shortcut still works
+after the index has been cleared.
+
 ### Folders
 
 The **Folders** view lists every subdirectory under the scanned root with its

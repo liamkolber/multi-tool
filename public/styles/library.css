@@ -13,7 +13,7 @@
 .lb-notice.error { border-color: #6b2f2f; background: #241416; color: #e07070; }
 
 .lb-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
-.lb-bar input {
+.lb-bar input[type="text"] {
   flex: 1;
   min-width: 220px;
   background: var(--surface);
@@ -25,7 +25,29 @@
   padding: 10px 13px;
   outline: none;
 }
-.lb-bar input:focus { border-color: var(--accent); }
+.lb-bar input[type="text"]:focus { border-color: var(--accent); }
+
+/* --- Recent folders --- */
+.lb-recent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: -8px 0 18px;
+}
+.lb-recent-label { color: var(--text-dim); font-size: 12.5px; flex: 0 0 auto; }
+.lb-recent .lb-chip { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- Nothing scanned yet --- */
+.lb-blank {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.6;
+  padding: 30px 24px;
+  text-align: center;
+}
 
 /* --- Scan progress --- */
 .lb-progress {
