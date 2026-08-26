@@ -17,6 +17,31 @@
 
 .ut-sec { display: flex; flex-direction: column; gap: 12px; padding-bottom: 40px; }
 
+/* An author "display" rule outranks the UA stylesheet's [hidden] { display:none },
+   so every section rendered at once no matter which tab was active. These put
+   the attribute back in charge. */
+.ut-sec[hidden],
+.ut-card[hidden] { display: none !important; }
+
+/* --- Regex: pick what you are here to do --- */
+.rx-modes { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 2px; }
+.rx-modes-q { color: var(--text-dim); font-size: 13px; flex: 0 0 auto; }
+.rx-modes-list { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.ut-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 13px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ut-chip:hover { color: var(--text); border-color: var(--text-dim); }
+.ut-chip.active { color: var(--text); border-color: var(--accent); background: var(--surface-2); }
+
 .ut-card {
   border: 1px solid var(--border);
   background: var(--surface);

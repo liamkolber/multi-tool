@@ -38,7 +38,7 @@ const TEMPLATE = `
     <div class="ut-card">
       <div class="ut-row">
         <span class="ut-slash">/</span>
-        <input id="rx-pattern" class="ut-mono" type="text" placeholder="\\d{3}-\\w+" autocomplete="off" spellcheck="false" />
+        <input id="rx-pattern" class="ut-mono" type="text" placeholder="\d{3}-\w+" autocomplete="off" spellcheck="false" />
         <span class="ut-slash">/</span>
         <label class="ut-flag"><input type="checkbox" id="rx-g" checked /> g</label>
         <label class="ut-flag"><input type="checkbox" id="rx-i" /> i</label>
@@ -49,8 +49,17 @@ const TEMPLATE = `
       <div id="rx-status" class="ut-status"></div>
     </div>
 
-    <div class="ut-card">
-      <h3 class="ut-h3">Build it</h3>
+    <div class="rx-modes">
+      <span class="rx-modes-q">I want to…</span>
+      <div class="rx-modes-list" id="rx-modes">
+        <button class="ut-chip active" type="button" data-mode="build">Build a pattern</button>
+        <button class="ut-chip" type="button" data-mode="infer">Infer one from examples</button>
+        <button class="ut-chip" type="button" data-mode="explain">Understand a pattern</button>
+        <button class="ut-chip" type="button" data-mode="test">Test it on text</button>
+      </div>
+    </div>
+
+    <div class="ut-card" data-mode="build">
       <p class="ut-hint">Stack the pieces you want; the pattern above is written for you.</p>
       <div id="rx-parts" class="rx-parts"></div>
       <div class="ut-row">
@@ -59,24 +68,24 @@ const TEMPLATE = `
       </div>
     </div>
 
-    <div class="ut-card">
-      <h3 class="ut-h3">Or infer it from examples</h3>
+    <div class="ut-card" data-mode="infer" hidden>
       <p class="ut-hint">Paste a few strings you want matched, one per line. More examples of the same shape give a better pattern.</p>
       <textarea id="rx-samples" class="ut-mono" rows="4" spellcheck="false" placeholder="AB-1234&#10;XY-5678&#10;QQ-0001"></textarea>
-      <div class="ut-row">
+      <div class="ut-row ut-wrap">
         <button class="ut-btn primary" type="button" id="rx-infer">Infer pattern</button>
         <label class="ut-flag"><input type="checkbox" id="rx-anchor" checked /> anchor to whole line</label>
+        <button class="ut-btn" type="button" id="rx-to-test" hidden>See it match →</button>
       </div>
       <div id="rx-infer-note" class="ut-status"></div>
     </div>
 
-    <div class="ut-card">
-      <h3 class="ut-h3">What it means</h3>
+    <div class="ut-card" data-mode="explain" hidden>
+      <p class="ut-hint">Every token in the pattern above, in the order it applies.</p>
       <ol id="rx-explain" class="rx-explain"></ol>
     </div>
 
-    <div class="ut-card">
-      <h3 class="ut-h3">Try it</h3>
+    <div class="ut-card" data-mode="test" hidden>
+      <p class="ut-hint">Matches are highlighted; capture groups are listed underneath.</p>
       <textarea id="rx-subject" class="ut-mono" rows="6" spellcheck="false" placeholder="Paste text to match against…"></textarea>
       <div id="rx-result" class="rx-result"></div>
     </div>
@@ -175,6 +184,25 @@ const NEEDS_VALUE = new Set(['literal', 'set', 'notset', 'oneof']);
 const IS_ANCHOR = new Set(['start', 'end', 'boundary']);
 
 let rxParts = [];
+let rxMode = 'build';
+let utSection = SECTIONS[0][0];
+
+// Coming back to a tool should put you where you left off, not at the top.
+const UT_PREFS_KEY = 'multitool:utils';
+
+function utSavePrefs() {
+  try {
+    localStorage.setItem(UT_PREFS_KEY, JSON.stringify({ section: utSection, rxMode }));
+  } catch { /* ignore quota */ }
+}
+
+function utLoadPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UT_PREFS_KEY));
+    if (saved && SECTIONS.some(([id]) => id === saved.section)) utSection = saved.section;
+    if (saved && ['build', 'infer', 'explain', 'test'].includes(saved.rxMode)) rxMode = saved.rxMode;
+  } catch { /* keep the defaults */ }
+}
 
 // --- Helpers ---
 const el = (id) => $(id);
@@ -231,7 +259,12 @@ function rxSyncFromParts() {
 
 function rxRun() {
   const src = el('rx-pattern').value;
-  el('rx-explain').innerHTML = explainPattern(src).map((l) => `<li>${esc(l)}</li>`).join('');
+
+  // Only the visible mode is worth rendering — explaining a pattern nobody is
+  // looking at, or matching against a subject on a hidden card, is wasted work.
+  if (rxMode === 'explain') {
+    el('rx-explain').innerHTML = explainPattern(src).map((l) => `<li>${esc(l)}</li>`).join('');
+  }
 
   if (!src) { status('rx-status', ''); el('rx-result').innerHTML = ''; return; }
 
@@ -244,6 +277,8 @@ function rxRun() {
     return;
   }
   status('rx-status', 'Valid pattern.', 'ok');
+
+  if (rxMode !== 'test') return;
 
   const subject = el('rx-subject').value;
   if (!subject) { el('rx-result').innerHTML = ''; return; }
@@ -445,8 +480,20 @@ function txCount() {
 
 // --- Wiring ---
 function showSection(id) {
+  utSection = id;
   document.querySelectorAll('.ut-sec').forEach((s) => { s.hidden = s.dataset.sec !== id; });
   document.querySelectorAll('.ut-tab').forEach((t) => t.classList.toggle('active', t.dataset.sec === id));
+  utSavePrefs();
+}
+
+function showRxMode(mode) {
+  rxMode = mode;
+  document.querySelectorAll('.ut-sec[data-sec="regex"] .ut-card[data-mode]')
+    .forEach((c) => { c.hidden = c.dataset.mode !== mode; });
+  document.querySelectorAll('#rx-modes .ut-chip')
+    .forEach((c) => c.classList.toggle('active', c.dataset.mode === mode));
+  utSavePrefs();
+  rxRun();
 }
 
 function bindUtils(panel) {
@@ -458,6 +505,11 @@ function bindUtils(panel) {
   panel.addEventListener('click', (e) => {
     const copy = e.target.closest('[data-copy]');
     if (copy) copyFrom(copy.dataset.copy);
+  });
+
+  panel.querySelector('#rx-modes').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-mode]');
+    if (chip) showRxMode(chip.dataset.mode);
   });
 
   // Regex
@@ -509,8 +561,12 @@ function bindUtils(panel) {
     rxRenderParts();
     // Offering the examples as the subject saves pasting them twice.
     if (!el('rx-subject').value.trim()) el('rx-subject').value = el('rx-samples').value;
+    // Don't yank the view away mid-thought — offer the jump instead.
+    el('rx-to-test').hidden = !pattern;
     rxRun();
   });
+
+  el('rx-to-test').addEventListener('click', () => showRxMode('test'));
 
   // JSON
   el('js-format').addEventListener('click', () => jsFormat(false));
@@ -548,8 +604,10 @@ export const tool = {
   blurb: 'Regex, JSON, encoding, hashes, timestamps and text.',
   mount(panel) {
     panel.innerHTML = TEMPLATE;
+    utLoadPrefs();
     bindUtils(panel);
-    rxRun();
+    showSection(utSection);
+    showRxMode(rxMode);
   },
   show() {
     el('rx-pattern')?.focus();
