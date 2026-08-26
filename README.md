@@ -303,7 +303,7 @@ row says which one matched it.
 | --- | --- | --- |
 | **identical file** | Same byte count *and* the same hash of the first and last 64 KB | Effectively certain |
 | **same length** | Same running time to the second, for anything over 30 seconds | Strong — catches a re-encode |
-| **same name** | The release name normalises to the same string | Weak on its own |
+| **same name** | The same filename, exactly, in two different folders | Strong |
 
 The first is what catches *the same video under a completely different name*: a
 plain copy or a rename shares every byte, so the name is irrelevant. Only files
@@ -317,17 +317,21 @@ the bytes are entirely different but the running time is not. The 30-second
 floor is there because two clips both eight seconds long are not evidence of
 anything.
 
-The third is the weakest and the one that cries wolf — release names are noisy,
-and stripping the noise out of "ASMR _ Haul (yay) _ triggers-1080p" leaves
-something a lot of unrelated files also normalise to. So a name match only
-counts toward **Possible duplicates** when the running times agree as well. It
-is still available on its own as the **Same name only** filter, for when that is
-what you are looking for.
+The third is an exact filename match, case-insensitive. Two files cannot share
+a name within one folder, so this always means copies sitting in different
+places — worth flagging even when their sizes and running times differ, since
+that is usually the same thing at two qualities.
 
-Name matching keeps the year, so a remake is not mistaken for the original:
-`Dune.2021.2160p.mkv` and `Dune.1984.480p.avi` stay apart, while
-`Blade.Runner.1982.1080p.BluRay.x264-GROUP.mkv` and
-`Blade Runner (1982) [720p].mp4` come together.
+It used to normalise release names instead — stripping resolutions, codecs and
+release groups so that
+`Movie.2019.1080p.BluRay.x264-GROUP.mkv` and `Movie (2019) [720p].mp4`
+would match. On a real library that was a menace. The trailing-release-group
+rule ate the only distinguishing part of names like
+`CHANNEL - 13177.mov` and `CHANNEL - 13144.mp4`, collapsing hundreds of
+unrelated files onto one key. It also contributed nothing the length signal did
+not already cover, because a fuzzy name only counted as a duplicate when the
+running times agreed anyway. Exact is what is left, and it is the version that
+is actually true.
 
 Probing is one process per file, so results are cached by path + size + mtime:
 a rescan after adding a few files only probes the few that changed. The index

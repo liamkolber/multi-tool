@@ -213,47 +213,29 @@ function lbClearError() {
 //   length     same running time, to the second, for anything over 30s. Catches
 //              the same video re-encoded, resized or remuxed — where the bytes
 //              differ completely but the content does not.
-//   name       the release name normalises to the same thing. On its own this
-//              is the weakest of the three and the one that cries wolf, so it
-//              only counts toward "possible duplicates" when the running times
-//              agree too.
+//   name       the same filename, exactly, in two different folders. Two files
+//              cannot share a name in one folder, so this always means copies
+//              in separate places.
 //
-// Release names are noisy — "Movie.2019.1080p.BluRay.x264-GROUP.mkv" and
-// "Movie (2019) [720p].mp4" are the same film — so the name signal strips
-// everything that is metadata rather than title, keeping the year since remakes
-// are genuinely different films.
-const NOISE = /\b(2160p|1440p|1080p|720p|576p|480p|360p|4k|uhd|hdr10?|sdr|bluray|blu-ray|brrip|bdrip|bdremux|webrip|web-dl|webdl|hdtv|hdrip|dvdrip|dvd|remux|x\s?26[45]|h\s?26[45]|hevc|avc|xvid|divx|aac|ac3|eac3|dts(-hd)?|ddp?\s?5[. ]?1|atmos|truehd|10bit|8bit|proper|repack|extended|unrated|uncut|remastered|directors?\s?cut|imax|multi|dual|subbed|dubbed|complete)\b/gi;
+// The name signal used to normalise release names — stripping resolutions,
+// codecs, release groups — so that "Movie.2019.1080p.BluRay.x264-GROUP.mkv" and
+// "Movie (2019) [720p].mp4" would match. On a real library that was a menace:
+// the trailing-release-group rule ate the only distinguishing part of names
+// like "CHANNEL - 13177.mov" and "CHANNEL - 13144.mp4", collapsing hundreds of
+// unrelated files onto one key. It also contributed nothing that the length
+// signal did not already cover, since a fuzzy name only counted as a duplicate
+// when the running times agreed anyway. Exact is what is left, and it is the
+// version that is actually true.
 
-// Below this a "title" is too generic to mean anything — "asmr", "clip", "1".
-const MIN_KEY_LEN = 6;
-// Two clips both 8 seconds long are not evidence of anything.
+// Two clips both eight seconds long are not evidence of anything.
 const MIN_DUP_DURATION = 30;
 
-function lbTitleKey(name) {
-  let s = name.replace(/\.[^.]+$/, '');           // extension
-  s = s.replace(/[._]+/g, ' ');                   // dots and underscores are separators
-
-  // The year is read BEFORE bracketed tags are stripped, because "(2019)" is
-  // both a bracketed tag and the year — stripping first loses it, and then
-  // "Movie (2019) [720p]" and "Movie.2019.720p" no longer match.
-  //
-  // Where several years appear the last one wins: a title carrying a year of
-  // its own reads as "Blade Runner 2049 2017", release year last. It is not
-  // always the right year, but it is consistently the same year for every
-  // naming style of the same film, which is what matching needs.
-  const years = s.match(/\b(19\d\d|20\d\d)\b/g);
-  const year = years ? years[years.length - 1] : null;
-
-  s = s.replace(/[[({].*?[\])}]/g, ' ');          // bracketed tags
-  s = s.replace(NOISE, ' ');
-  s = s.replace(/\b(19\d\d|20\d\d)\b/g, ' '); // every year, wherever it sat
-  s = s.replace(/-\s*[a-z0-9]+\s*$/i, ' ');      // trailing release group
-  s = s.replace(/[^a-z0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-  return year ? `${s} ${year}` : s;
+// Windows filenames are case-insensitive, so "Clip.mp4" and "clip.mp4" in two
+// folders are the same name.
+function lbNameKey(name) {
+  return String(name || '').trim().toLowerCase();
 }
 
-// Groups every file by a key, and returns the members of any group with more
-// than one file in it.
 function groupBy(files, keyOf) {
   const byKey = new Map();
   for (const f of files) {
@@ -277,10 +259,7 @@ function lbDuplicates(files) {
   const identical = groupBy(videos, (f) => (f.sig && f.size ? `${f.size}:${f.sig}` : null));
   const byLength = groupBy(videos, (f) =>
     (f.duration && f.duration >= MIN_DUP_DURATION ? Math.round(f.duration) : null));
-  const byName = groupBy(videos, (f) => {
-    const key = lbTitleKey(f.name);
-    return key.length >= MIN_KEY_LEN ? key : null;
-  });
+  const byName = groupBy(videos, (f) => lbNameKey(f.name) || null);
 
   const out = new Map();
   // groupBy hands every member of a set the same array, so the array itself is
@@ -313,10 +292,13 @@ function lbDuplicates(files) {
   return out;
 }
 
-// What counts as worth showing under "possible duplicates": either of the two
-// strong signals, or a name match corroborated by the running time.
+// Any of the three now qualifies. The name signal used to need the running time
+// to corroborate it, which was a way of muzzling a heuristic that cried wolf —
+// an exact filename match in two folders needs no such hedging, and the old
+// condition was redundant anyway (a name match only counted when the length
+// matched, and a length match already counted by itself).
 function lbIsDuplicate(d) {
-  return !!d && (d.identical || d.length || (d.name && d.length));
+  return !!d && (d.identical || d.length || d.name);
 }
 
 function lbDupeReason(d) {
@@ -324,7 +306,7 @@ function lbDupeReason(d) {
   const why = d.identical ? 'identical file'
     : d.length && d.name ? 'same name and length'
       : d.length ? 'same length'
-        : d.name ? 'same name only' : '';
+        : d.name ? 'same name' : '';
   if (!why) return '';
   // "1 of 3" is the part that tells you whether it is worth opening.
   const n = d.groupCount || 0;
@@ -345,10 +327,7 @@ const FILTERS = [
   { id: 'dupes', label: 'Possible duplicates', test: (f) => lbIsDuplicate(lbDupes.get(f.path)) },
   { id: 'identical', label: 'Identical files', test: (f) => !!(lbDupes.get(f.path) || {}).identical },
   { id: 'samelen', label: 'Same length', test: (f) => !!(lbDupes.get(f.path) || {}).length },
-  { id: 'samename', label: 'Same name only', test: (f) => {
-    const d = lbDupes.get(f.path);
-    return !!d && d.name && !d.identical && !d.length;
-  } },
+  { id: 'samename', label: 'Same filename', test: (f) => !!(lbDupes.get(f.path) || {}).name },
   { id: 'big', label: 'Over 4 GB', test: (f) => f.size > 4 * 1024 ** 3 },
   { id: 'bad', label: 'Unreadable', test: (f) => f.unreadable },
 ];

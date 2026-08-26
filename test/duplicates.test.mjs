@@ -11,135 +11,122 @@ const grab = (re, what) => {
 };
 
 const api = new Function(`
-  ${grab(/const NOISE = \/.*?\/gi;/s, 'NOISE')}
-  ${grab(/const MIN_KEY_LEN = \d+;/, 'MIN_KEY_LEN')}
   ${grab(/const MIN_DUP_DURATION = \d+;/, 'MIN_DUP_DURATION')}
-  ${grab(/function lbTitleKey\(name\) \{[\s\S]*?\n\}/, 'lbTitleKey')}
+  ${grab(/function lbNameKey\(name\) \{[\s\S]*?\n\}/, 'lbNameKey')}
   ${grab(/function groupBy\(files, keyOf\) \{[\s\S]*?\n\}/, 'groupBy')}
   ${grab(/function lbDuplicates\(files\) \{[\s\S]*?\n\}/, 'lbDuplicates')}
   ${grab(/function lbIsDuplicate\(d\) \{[\s\S]*?\n\}/, 'lbIsDuplicate')}
   ${grab(/function lbDupeReason\(d\) \{[\s\S]*?\n\}/, 'lbDupeReason')}
-  return { lbTitleKey, lbDuplicates, lbIsDuplicate, lbDupeReason };
+  return { lbNameKey, lbDuplicates, lbIsDuplicate, lbDupeReason };
 `)();
 
 const { lbDuplicates, lbIsDuplicate, lbDupeReason } = api;
 
-const v = (name, size, duration, sig = null) =>
-  ({ path: `X:\\${name}`, name, kind: 'video', size, duration, sig });
+// Distinct folders, because two files cannot share a name in one.
+const v = (dir, name, size, duration, sig = null) =>
+  ({ path: `X:\\${dir}\\${name}`, dir: `X:\\${dir}`, name, kind: 'video', size, duration, sig });
 
 let pass = 0;
 let fail = 0;
 const check = (label, cond, detail = '') => {
-  console.log(`${cond ? 'ok  ' : 'FAIL'}  ${label.padEnd(46)} ${detail}`);
+  console.log(`${cond ? 'ok  ' : 'FAIL'}  ${label.padEnd(48)} ${detail}`);
   cond ? pass++ : fail++;
 };
 
-// The library the server actually produced for these cases.
 const FILES = [
-  v('Interstellar.2014.1080p.BluRay.mkv', 592002, 40, 'e923ff478540b641'),
-  v('vid_0093_final_RENAMED.mkv', 592002, 40, 'e923ff478540b641'),   // byte-identical copy
-  v('some_random_name_720.mp4', 469795, 40),                          // re-encode of the same
-  v('Gravity.2013.1080p.mkv', 591831, 40),                            // different film, same length
-  v('ASMR _ Haul _ triggers-1080p.mp4', 532590, 35),                  // same normalised name…
-  v('ASMR _ Haul (yay) _ triggers-1080p.mp4', 187227, 12),            // …but a different video
-  v('clip1.mp4', 71561, 5),                                           // short, identical length
-  v('clip2.mp4', 71442, 5),
+  v('A', 'Interstellar.2014.1080p.BluRay.mkv', 592002, 40, 'e923ff478540b641'),
+  v('B', 'vid_0093_final_RENAMED.mkv', 592002, 40, 'e923ff478540b641'),  // byte-identical copy
+  v('B', 'some_random_name_720.mp4', 469795, 40),                        // re-encode of the same
+  v('A', 'Gravity.2013.1080p.mkv', 591831, 40),                          // different film, same length
+  v('A', 'holiday.mp4', 111, 90),                                        // same filename in two…
+  v('B', 'holiday.mp4', 222, 120),                                       // …folders, nothing else alike
+  v('A', 'HOLIDAY.MP4'.toLowerCase() === 'holiday.mp4' ? 'Holiday2.mp4' : 'x', 333, 150),
+  v('A', 'clip1.mp4', 71561, 5),                                         // short, identical length
+  v('B', 'clip2.mp4', 71442, 5),
 ];
 
 const d = lbDuplicates(FILES);
-const of = (name) => d.get(`X:\\${name}`);
-const reason = (name) => {
-  const info = of(name);
+const at = (dir, name) => d.get(`X:\\${dir}\\${name}`);
+const reason = (dir, name) => {
+  const info = at(dir, name);
   return lbIsDuplicate(info) ? lbDupeReason(info) : '(not flagged)';
 };
 
 console.log('--- what each file was matched on ---');
-for (const f of FILES) console.log(`      ${f.name.padEnd(40)} ${reason(f.name)}`);
+for (const f of FILES) console.log(`      ${(`${f.dir.slice(3)}\\${f.name}`).padEnd(42)} ${reason(f.dir.slice(3), f.name)}`);
 
 console.log('\n--- a renamed copy is caught with certainty ---');
 check('byte-identical pair reads as identical',
-  of('Interstellar.2014.1080p.BluRay.mkv').identical
-  && of('vid_0093_final_RENAMED.mkv').identical);
+  at('A', 'Interstellar.2014.1080p.BluRay.mkv').identical && at('B', 'vid_0093_final_RENAMED.mkv').identical);
 check('…and reports that as the reason',
-  reason('vid_0093_final_RENAMED.mkv').startsWith('identical file'),
-  reason('vid_0093_final_RENAMED.mkv'));
-check('a wholly unrelated name is no obstacle',
-  lbIsDuplicate(of('vid_0093_final_RENAMED.mkv')));
+  reason('B', 'vid_0093_final_RENAMED.mkv').startsWith('identical file'),
+  reason('B', 'vid_0093_final_RENAMED.mkv'));
 
 console.log('\n--- a re-encode is caught on running time, not bytes ---');
-check('re-encode flagged despite different size',
-  lbIsDuplicate(of('some_random_name_720.mp4')));
-check('and it is NOT claimed to be identical',
-  !of('some_random_name_720.mp4').identical,
-  reason('some_random_name_720.mp4'));
+check('re-encode flagged despite different size', lbIsDuplicate(at('B', 'some_random_name_720.mp4')));
+check('and it is NOT claimed to be identical', !at('B', 'some_random_name_720.mp4').identical);
 
-console.log('\n--- the weak signal no longer fires on its own ---');
-// Two different videos whose release names normalise the same. Under the old
-// name-only rule both were flagged; now the running times disagree, so neither
-// counts as a probable duplicate.
-check('same name + different length is not a duplicate',
-  !lbIsDuplicate(of('ASMR _ Haul _ triggers-1080p.mp4'))
-  && !lbIsDuplicate(of('ASMR _ Haul (yay) _ triggers-1080p.mp4')));
-check('but the name match is still recorded',
-  of('ASMR _ Haul _ triggers-1080p.mp4').name === true);
+console.log('\n--- the name signal is an exact filename match ---');
+check('same filename in two folders is flagged',
+  at('A', 'holiday.mp4').name === true && at('B', 'holiday.mp4').name === true);
+check('…even with different sizes and lengths',
+  lbIsDuplicate(at('A', 'holiday.mp4')) && !at('A', 'holiday.mp4').identical && !at('A', 'holiday.mp4').length,
+  reason('A', 'holiday.mp4'));
+check('a merely similar filename is not', !at('A', 'Holiday2.mp4'));
+
+// The regression this replaced. These share everything the old normaliser kept
+// — the trailing "- NNNNN" was stripped as if it were a release group — so all
+// four collapsed onto one key and were reported as duplicates of each other.
+console.log('\n--- release-name normalising no longer collapses unrelated files ---');
+const telegram = lbDuplicates([
+  v('t', '\u26a1@LE4KSXHUB ON TELEGRAM - 13177.mov', 2300, 15),
+  v('t2', '\u26a1@LE4KSXHUB ON TELEGRAM - 13144.mp4', 1300, 30),
+  v('t3', '\u26a1@LE4KSXHUB ON TELEGRAM - 13143.mp4', 688, 15),
+  v('t4', '\u26a1@LE4KSXHUB ON TELEGRAM - 863.mp4', 635, 10),
+]);
+check('four differently-numbered files are not one set', telegram.size === 0,
+  `${telegram.size} flagged`);
+
+const spank = lbDuplicates([
+  v('s', 'SpankBang.com_alyssa+pusy_1080p (1).mp4', 3100, 133),
+  v('s2', 'SpankBang.com_alyssa+pusy_1080p (2).mp4', 2600, 113),
+]);
+check('"(1)" and "(2)" of different lengths are not a set', spank.size === 0,
+  `${spank.size} flagged`);
 
 console.log('\n--- short clips are not evidence ---');
-check('5s files of equal length are ignored',
-  !d.has('X:\\clip1.mp4') && !d.has('X:\\clip2.mp4'));
+check('5s files of equal length are ignored', !at('A', 'clip1.mp4') && !at('B', 'clip2.mp4'));
 
 console.log('\n--- honest about what it cannot know ---');
-// Gravity really is 40 seconds long, same as the Interstellar set. Length alone
-// cannot tell them apart, and the label says "same length" rather than claiming
-// they are the same file.
 check('a coincidental length match is labelled as such',
-  reason('Gravity.2013.1080p.mkv').startsWith('same length'),
-  reason('Gravity.2013.1080p.mkv'));
-check('it is never called identical',
-  !of('Gravity.2013.1080p.mkv').identical);
+  reason('A', 'Gravity.2013.1080p.mkv').startsWith('same length'),
+  reason('A', 'Gravity.2013.1080p.mkv'));
+check('it is never called identical', !at('A', 'Gravity.2013.1080p.mkv').identical);
 
 console.log('\n--- sets have an identity, so they can be sorted together ---');
-// The four 40-second files are one length set; the byte-identical pair is a
-// stronger set and is grouped by that instead.
-const idA = of('Interstellar.2014.1080p.BluRay.mkv').groupId;
-const idB = of('vid_0093_final_RENAMED.mkv').groupId;
+const idA = at('A', 'Interstellar.2014.1080p.BluRay.mkv').groupId;
+const idB = at('B', 'vid_0093_final_RENAMED.mkv').groupId;
 check('an identical pair shares one group', idA === idB, `ids ${idA}/${idB}`);
 check('and that group holds exactly the two of them',
-  of('Interstellar.2014.1080p.BluRay.mkv').groupCount === 2);
-
-const gravity = of('Gravity.2013.1080p.mkv');
-check('a length-only match groups by length instead',
-  gravity.groupId !== idA, `ids ${gravity.groupId}/${idA}`);
-
-// Keeping the largest copy of the identical pair leaves one 592002-byte file.
+  at('A', 'Interstellar.2014.1080p.BluRay.mkv').groupCount === 2);
+check('a length-only match groups separately',
+  at('A', 'Gravity.2013.1080p.mkv').groupId !== idA);
 check('waste counts every copy but the largest',
-  of('vid_0093_final_RENAMED.mkv').groupWaste === 592002,
-  String(of('vid_0093_final_RENAMED.mkv').groupWaste));
-
-// Reclaimable must count each set once, not once per member, or a set of three
-// would be counted three times over.
-const seen = new Set();
-let reclaimable = 0;
-for (const f of FILES) {
-  const d = of(f.name);
-  if (!d || !lbIsDuplicate(d) || seen.has(d.groupId)) continue;
-  seen.add(d.groupId);
-  reclaimable += d.groupWaste;
-}
-check('reclaimable counts each set once',
-  reclaimable < FILES.reduce((n, f) => n + f.size, 0), `${reclaimable} bytes across ${seen.size} sets`);
+  at('B', 'vid_0093_final_RENAMED.mkv').groupWaste === 592002,
+  String(at('B', 'vid_0093_final_RENAMED.mkv').groupWaste));
 
 console.log('\n--- a library with nothing in common stays quiet ---');
 const clean = lbDuplicates([
-  v('a.mkv', 100, 100), v('b.mkv', 200, 200), v('c.mkv', 300, 300),
+  v('a', 'a.mkv', 100, 100), v('b', 'b.mkv', 200, 200), v('c', 'c.mkv', 300, 300),
 ]);
 check('no false positives on distinct files', clean.size === 0);
 
 console.log('\n--- signatures are only trusted alongside a size match ---');
 const sameSigDiffSize = lbDuplicates([
-  v('x.mkv', 100, 90, 'abc'), v('y.mkv', 200, 90, 'abc'),
+  v('a', 'x.mkv', 100, 90, 'abc'), v('b', 'y.mkv', 200, 90, 'abc'),
 ]);
 check('same sig but different size is not identical',
-  !sameSigDiffSize.get('X:\\x.mkv').identical);
+  !sameSigDiffSize.get('X:\\a\\x.mkv').identical);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
