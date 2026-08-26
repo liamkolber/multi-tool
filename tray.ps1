@@ -1,4 +1,4 @@
-# Media Library tray host.
+# Liam's Multi-Tool tray host.
 #
 # Starts the server with no console window at all and puts a tray icon in its
 # place — the icon is what you use to open the app, reach the downloads folder,
@@ -18,12 +18,12 @@ $Root    = $PSScriptRoot
 $Port    = 8080
 $Url     = "http://localhost:$Port"
 $LogPath = Join-Path $Root 'server.log'
-$IcoPath = Join-Path $Root 'media.ico'
+$IcoPath = Join-Path $Root 'multitool.ico'
 
 # --- Single instance: a second launch should surface the app, not stack up a
 # --- second tray icon and a second server.
 $createdNew = $false
-$mutex = New-Object System.Threading.Mutex($true, 'Local\MediaLibraryTray', [ref]$createdNew)
+$mutex = New-Object System.Threading.Mutex($true, 'Local\LiamsMultiToolTray', [ref]$createdNew)
 if (-not $createdNew) {
     if (-not $NoBrowse) { Start-Process $Url }
     return
@@ -47,7 +47,7 @@ function Start-Server {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
         [void][System.Windows.Forms.MessageBox]::Show(
             "Node.js was not found on your PATH.`r`nInstall it from https://nodejs.org and run this again.",
-            'Media Library')
+            "Liam's Multi-Tool")
         return $false
     }
 
@@ -79,12 +79,12 @@ function Stop-Server {
 $icon = New-Object System.Windows.Forms.NotifyIcon
 $icon.Icon = if (Test-Path $IcoPath) { New-Object System.Drawing.Icon($IcoPath) }
              else { [System.Drawing.SystemIcons]::Application }
-$icon.Text    = 'Media Library'
+$icon.Text    = "Liam's Multi-Tool"
 $icon.Visible = $true
 
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 
-$miOpen = $menu.Items.Add('Open Media Library')
+$miOpen = $menu.Items.Add('Open Multi-Tool')
 $miOpen.Font = New-Object System.Drawing.Font($menu.Font, [System.Drawing.FontStyle]::Bold)
 $miOpen.add_Click({ Start-Process $Url })
 
@@ -103,14 +103,14 @@ $miFolder.add_Click({
 $miLog = $menu.Items.Add('View server log')
 $miLog.add_Click({
     if (Test-Path $LogPath) { Start-Process notepad.exe -ArgumentList ('"' + $LogPath + '"') }
-    else { [void][System.Windows.Forms.MessageBox]::Show('No log yet.', 'Media Library') }
+    else { [void][System.Windows.Forms.MessageBox]::Show('No log yet.', "Liam's Multi-Tool") }
 })
 
 $miRestart = $menu.Items.Add('Restart server')
 $miRestart.add_Click({
     Stop-Server
     Start-Sleep -Milliseconds 800
-    if (Start-Server) { $icon.ShowBalloonTip(2000, 'Media Library', 'Server restarted.', 'Info') }
+    if (Start-Server) { $icon.ShowBalloonTip(2000, "Liam's Multi-Tool", 'Server restarted.', 'Info') }
 })
 
 [void]$menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))

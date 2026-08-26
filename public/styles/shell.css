@@ -1,0 +1,127 @@
+/* The shell: icon rail, stage, launcher home screen, and the per-tool panels. */
+
+.shell { display: flex; align-items: flex-start; min-height: 100vh; }
+
+/* ---------- Tool rail ---------- */
+.rail {
+  flex: 0 0 66px;
+  width: 66px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  background: #0e1119;
+  border-right: 1px solid var(--border);
+  z-index: 30;
+}
+
+.rail-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  width: 44px;
+}
+
+.rail-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, transform 0.12s;
+}
+.rail-btn:hover { background: var(--surface-2); border-color: var(--border); }
+.rail-btn:active { transform: scale(0.94); }
+.rail-btn.active { background: var(--surface-3); border-color: var(--accent); }
+
+/* The little accent bar that marks the tool you're in. */
+.rail-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -9px;
+  width: 3px;
+  height: 22px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.rail-icon { font-size: 20px; line-height: 1; }
+.rail-home .rail-icon { font-size: 22px; }
+
+/* ---------- Stage + panels ---------- */
+.stage { flex: 1; min-width: 0; }
+
+/* Tools that bring their own sidebar (Media Library) lay themselves out edge
+   to edge; the rest get comfortable page padding. */
+.tool-panel { min-height: 100vh; }
+.tool-panel:not(:has(> .app)) { padding: 26px 32px 48px; max-width: 1180px; }
+
+.tool-head { margin-bottom: 22px; }
+.tool-title {
+  display: flex; align-items: center; gap: 11px;
+  font-size: 24px; font-weight: 700; margin: 0;
+}
+.tool-title-icon { font-size: 26px; }
+.tool-sub { color: var(--text-dim); font-size: 14px; margin: 7px 0 0; }
+
+/* ---------- Launcher home ---------- */
+.home { padding: 64px 40px 60px; max-width: 1080px; }
+
+.home-head { margin-bottom: 40px; }
+.home-title {
+  display: flex; align-items: center; gap: 14px;
+  font-size: 34px; font-weight: 800; margin: 0; letter-spacing: -0.5px;
+}
+.home-mark { font-size: 36px; }
+.home-sub { color: var(--text-dim); font-size: 15.5px; margin: 10px 0 0; }
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 22px 24px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+}
+.home-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  transform: translateY(-2px);
+}
+.home-card:active { transform: translateY(0); }
+
+.home-card-icon { font-size: 30px; line-height: 1; margin-bottom: 4px; }
+.home-card-name { font-size: 16.5px; font-weight: 700; }
+.home-card-blurb { color: var(--text-dim); font-size: 13.5px; line-height: 1.55; }
+
+@media (max-width: 720px) {
+  .rail { flex-basis: 56px; width: 56px; }
+  .home { padding: 40px 22px; }
+  .home-title { font-size: 26px; }
+  .tool-panel:not(:has(> .app)) { padding: 20px 18px 40px; }
+}

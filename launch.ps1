@@ -1,4 +1,4 @@
-# Media Library launcher — terminal entry point.
+# Liam's Multi-Tool launcher — terminal entry point.
 #
 # The app lives in the system tray now, so this just hands off to tray.ps1,
 # which starts the server with no console window and owns the tray icon.

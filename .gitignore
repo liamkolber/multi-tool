@@ -6,3 +6,4 @@ downloads/
 bin/
 .dl-config.json
 .dl-jobs.json
+.reddit.json

@@ -1,4 +1,4 @@
-' Starts the Media Library tray host with no window at all.
+' Starts the Liam's Multi-Tool tray host with no window at all.
 '
 ' PowerShell's -WindowStyle Hidden still flashes a console for a moment before
 ' it applies. Launching through WScript with window mode 0 never creates one,

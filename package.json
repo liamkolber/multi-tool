@@ -1,7 +1,7 @@
 {
-  "name": "media-library",
-  "version": "1.0.0",
-  "description": "A local web app to browse movies/TV (YTS) and anime (AniList) from one search box",
+  "name": "liams-multi-tool",
+  "version": "2.0.0",
+  "description": "A local web app that hosts a set of personal tools: a media library, a video downloader, and a Reddit account browser",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
