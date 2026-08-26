@@ -533,14 +533,25 @@ async function lbCancelScan() {
 // Opens the file with whatever Windows (or the desktop) associates with it.
 async function lbOpen(path) {
   try {
-    await fetch(`/api/library/open?path=${encodeURIComponent(path)}`, { method: 'POST' });
-  } catch { /* ignore */ }
+    const res = await fetch(`/api/library/open?path=${encodeURIComponent(path)}`, { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') lbShowError(json.status_message || 'Could not open that.');
+    else lbClearError();
+  } catch {
+    lbShowError('Could not reach the server.');
+  }
 }
 
 async function lbReveal(path) {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : '';
   try {
-    await fetch(`/api/library/reveal?path=${encodeURIComponent(path)}`, { method: 'POST' });
-  } catch { /* ignore */ }
+    const res = await fetch(`/api/library/reveal${qs}`, { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') lbShowError(json.status_message || 'Could not show that.');
+    else lbClearError();
+  } catch {
+    lbShowError('Could not reach the server.');
+  }
 }
 
 // Hand a file to the Converter. Going through sessionStorage rather than
