@@ -27,6 +27,7 @@ const TEMPLATE = `
 
   <div id="lb-controls" class="lb-controls" hidden>
     <input id="lb-search" type="search" placeholder="Search name, folder, codec…" autocomplete="off" />
+    <label class="lb-toggle"><input type="checkbox" id="lb-thumbs" checked /> Thumbnails</label>
     <select id="lb-sort">
       <option value="name">Name</option>
       <option value="size">Largest first</option>
@@ -52,6 +53,7 @@ function cacheEls() {
     controls: $('lb-controls'),
     search: $('lb-search'),
     sort: $('lb-sort'),
+    thumbs: $('lb-thumbs'),
     filters: $('lb-filters'),
     list: $('lb-list'),
   });
@@ -63,6 +65,20 @@ let lbStream = null;
 let lbFilter = 'all';
 let lbQuery = '';
 let lbSort = 'name';
+let lbThumbs = true;
+
+const LB_PREFS_KEY = 'multitool:library';
+
+function lbSavePrefs() {
+  try { localStorage.setItem(LB_PREFS_KEY, JSON.stringify({ thumbs: lbThumbs })); } catch { /* ignore */ }
+}
+
+function lbLoadPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LB_PREFS_KEY));
+    if (saved && typeof saved.thumbs === 'boolean') lbThumbs = saved.thumbs;
+  } catch { /* keep the default */ }
+}
 
 const RENDER_CAP = 400; // the DOM, not the data — filters still see everything
 
@@ -108,11 +124,28 @@ function lbClearError() {
 }
 
 // --- Duplicate detection ----------------------------------------------------
+// Three independent signals, because "duplicate" means different things:
+//
+//   identical  same byte count AND the same head/tail hash from the server.
+//              A straight copy under another name. Effectively certain.
+//   length     same running time, to the second, for anything over 30s. Catches
+//              the same video re-encoded, resized or remuxed — where the bytes
+//              differ completely but the content does not.
+//   name       the release name normalises to the same thing. On its own this
+//              is the weakest of the three and the one that cries wolf, so it
+//              only counts toward "possible duplicates" when the running times
+//              agree too.
+//
 // Release names are noisy — "Movie.2019.1080p.BluRay.x264-GROUP.mkv" and
-// "Movie (2019) [720p].mp4" are the same film. Strip everything that is
-// metadata rather than title and compare what is left, keeping the year since
-// remakes are genuinely different films.
+// "Movie (2019) [720p].mp4" are the same film — so the name signal strips
+// everything that is metadata rather than title, keeping the year since remakes
+// are genuinely different films.
 const NOISE = /\b(2160p|1440p|1080p|720p|576p|480p|360p|4k|uhd|hdr10?|sdr|bluray|blu-ray|brrip|bdrip|bdremux|webrip|web-dl|webdl|hdtv|hdrip|dvdrip|dvd|remux|x\s?26[45]|h\s?26[45]|hevc|avc|xvid|divx|aac|ac3|eac3|dts(-hd)?|ddp?\s?5[. ]?1|atmos|truehd|10bit|8bit|proper|repack|extended|unrated|uncut|remastered|directors?\s?cut|imax|multi|dual|subbed|dubbed|complete)\b/gi;
+
+// Below this a "title" is too generic to mean anything — "asmr", "clip", "1".
+const MIN_KEY_LEN = 6;
+// Two clips both 8 seconds long are not evidence of anything.
+const MIN_DUP_DURATION = 30;
 
 function lbTitleKey(name) {
   let s = name.replace(/\.[^.]+$/, '');           // extension
@@ -137,24 +170,67 @@ function lbTitleKey(name) {
   return year ? `${s} ${year}` : s;
 }
 
-function lbDuplicateKeys(files) {
+// Groups every file by a key, and returns the members of any group with more
+// than one file in it.
+function groupBy(files, keyOf) {
   const byKey = new Map();
   for (const f of files) {
-    if (f.kind !== 'video') continue;
-    const key = lbTitleKey(f.name);
-    if (!key) continue;
+    const key = keyOf(f);
+    if (key == null) continue;
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(f);
   }
-  const dupes = new Set();
+  const out = new Map();
   for (const [, group] of byKey) {
-    if (group.length > 1) group.forEach((f) => dupes.add(f.path));
+    if (group.length > 1) for (const f of group) out.set(f.path, group);
   }
-  return dupes;
+  return out;
+}
+
+// path -> { identical, length, name, group } where group is the largest set of
+// files this one was matched with.
+function lbDuplicates(files) {
+  const videos = files.filter((f) => f.kind === 'video' || f.kind === 'audio');
+
+  const identical = groupBy(videos, (f) => (f.sig && f.size ? `${f.size}:${f.sig}` : null));
+  const byLength = groupBy(videos, (f) =>
+    (f.duration && f.duration >= MIN_DUP_DURATION ? Math.round(f.duration) : null));
+  const byName = groupBy(videos, (f) => {
+    const key = lbTitleKey(f.name);
+    return key.length >= MIN_KEY_LEN ? key : null;
+  });
+
+  const out = new Map();
+  for (const f of videos) {
+    const flags = {
+      identical: identical.has(f.path),
+      length: byLength.has(f.path),
+      name: byName.has(f.path),
+    };
+    if (!flags.identical && !flags.length && !flags.name) continue;
+    flags.group = identical.get(f.path) || byLength.get(f.path) || byName.get(f.path);
+    out.set(f.path, flags);
+  }
+  return out;
+}
+
+// What counts as worth showing under "possible duplicates": either of the two
+// strong signals, or a name match corroborated by the running time.
+function lbIsDuplicate(d) {
+  return !!d && (d.identical || d.length || (d.name && d.length));
+}
+
+function lbDupeReason(d) {
+  if (!d) return '';
+  if (d.identical) return 'identical file';
+  if (d.length && d.name) return 'same name and length';
+  if (d.length) return 'same length';
+  if (d.name) return 'same name only';
+  return '';
 }
 
 // --- Filters ---
-let lbDupes = new Set();
+let lbDupes = new Map();
 
 const FILTERS = [
   { id: 'all', label: 'All', test: () => true },
@@ -162,7 +238,13 @@ const FILTERS = [
   { id: 'audio', label: 'Audio', test: (f) => f.kind === 'audio' },
   { id: 'sd', label: 'Below 1080p', test: (f) => f.kind === 'video' && f.height && f.height < 1000 },
   { id: 'nosubs', label: 'No subtitles', test: (f) => f.kind === 'video' && !f.subTracks && !(f.sidecars || []).length },
-  { id: 'dupes', label: 'Possible duplicates', test: (f) => lbDupes.has(f.path) },
+  { id: 'dupes', label: 'Possible duplicates', test: (f) => lbIsDuplicate(lbDupes.get(f.path)) },
+  { id: 'identical', label: 'Identical files', test: (f) => !!(lbDupes.get(f.path) || {}).identical },
+  { id: 'samelen', label: 'Same length', test: (f) => !!(lbDupes.get(f.path) || {}).length },
+  { id: 'samename', label: 'Same name only', test: (f) => {
+    const d = lbDupes.get(f.path);
+    return !!d && d.name && !d.identical && !d.length;
+  } },
   { id: 'big', label: 'Over 4 GB', test: (f) => f.size > 4 * 1024 ** 3 },
   { id: 'bad', label: 'Unreadable', test: (f) => f.unreadable },
 ];
@@ -196,7 +278,7 @@ function lbRenderStats() {
     ['Runtime', `${Math.round(totalTime / 3600)} h`],
     ['Below 1080p', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'sd').test).length)],
     ['No subtitles', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'nosubs').test).length)],
-    ['Possible dupes', fmtNumber(lbDupes.size)],
+    ['Possible dupes', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'dupes').test).length)],
   ];
   lb.stats.hidden = false;
   lb.stats.innerHTML = cells.map(([k, v]) =>
@@ -213,22 +295,34 @@ function lbRenderFilters() {
 }
 
 function lbRowHtml(f) {
-  const res = lbResLabel(f);
+  const dupe = lbDupes.get(f.path);
+  const reason = lbIsDuplicate(dupe) ? lbDupeReason(dupe) : '';
   const subs = f.subTracks
     ? `${f.subTracks} embedded`
     : (f.sidecars || []).length ? `${f.sidecars.length} sidecar` : '';
   const bits = [
     lbBytes(f.size),
     f.duration ? lbClock(f.duration) : '',
-    res,
+    lbResLabel(f),
     f.vcodec || '',
     subs ? `CC ${subs}` : '',
   ].filter(Boolean);
 
-  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${lbDupes.has(f.path) ? ' dupe' : ''}">
+  // loading="lazy" is what makes this affordable on a library of thousands —
+  // the browser only asks for the handful actually on screen, and each request
+  // is what triggers the server to render that frame.
+  const thumb = lbThumbs && (f.kind === 'video' || f.kind === 'image') && !f.unreadable
+    ? `<img class="lb-thumb" loading="lazy" decoding="async" alt=""
+         src="/api/library/thumb?path=${encodeURIComponent(f.path)}"
+         onerror="this.classList.add('failed')" />`
+    : '';
+
+  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}">
+    ${thumb}
     <div class="lb-row-main">
       <div class="lb-row-name" title="${esc(f.path)}">${esc(f.name)}</div>
-      <div class="lb-row-meta">${bits.map(esc).join(' · ')}</div>
+      <div class="lb-row-meta">${bits.map(esc).join(' · ')}${
+        reason ? ` · <span class="lb-dupe-why">${esc(reason)}</span>` : ''}</div>
     </div>
     <div class="lb-row-acts">
       ${f.kind !== 'other' ? `<button class="lb-act" type="button" data-convert="${esc(f.path)}" title="Open in Converter">Convert</button>` : ''}
@@ -253,7 +347,7 @@ function lbRenderList() {
 }
 
 function lbRenderAll() {
-  lbDupes = lbDuplicateKeys(lbFiles);
+  lbDupes = lbDuplicates(lbFiles);
   lbRenderStats();
   lbRenderFilters();
   lbRenderList();
@@ -376,6 +470,12 @@ function bindLibrary() {
 
   lb.sort.addEventListener('change', () => { lbSort = lb.sort.value; lbRenderList(); });
 
+  lb.thumbs.addEventListener('change', () => {
+    lbThumbs = lb.thumbs.checked;
+    lbSavePrefs();
+    lbRenderList();
+  });
+
   lb.filters.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-filter]');
     if (!chip) return;
@@ -400,6 +500,8 @@ export const tool = {
   mount(panel) {
     panel.innerHTML = TEMPLATE;
     cacheEls();
+    lbLoadPrefs();
+    lb.thumbs.checked = lbThumbs;
     bindLibrary();
     lbLoadIndex();
     lbConnect();

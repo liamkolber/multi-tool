@@ -215,12 +215,51 @@ What it surfaces:
 - **Totals** — file count, disk used, combined runtime
 - **Below 1080p** — what is worth re-pulling at a better quality
 - **No subtitles** — neither an embedded track nor a sidecar `.srt` beside it
-- **Possible duplicates** — the same film under two naming conventions, matched
-  by stripping release tags down to title + year. The year is kept, so a remake
-  is not mistaken for a duplicate of the original
+- **Possible duplicates** — see below
+- **Thumbnails** — a poster frame per file, taken 10% of the way in (the opening
+  seconds are so often black or a title card). They are rendered on demand as
+  rows scroll into view and cached to a gitignored `.library-thumbs/`, so a
+  library of thousands costs nothing until you actually look at it. The cache key
+  folds in size and mtime, so an edited file gets a fresh frame rather than a
+  stale one. Toggle them off in the controls if you would rather have the density
 - **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)
 
 Any row can be revealed in Explorer, or handed straight to the Converter.
+
+### How duplicates are decided
+
+Three independent signals, because "duplicate" means more than one thing. Each
+row says which one matched it.
+
+| Signal | Means | Certainty |
+| --- | --- | --- |
+| **identical file** | Same byte count *and* the same hash of the first and last 64 KB | Effectively certain |
+| **same length** | Same running time to the second, for anything over 30 seconds | Strong — catches a re-encode |
+| **same name** | The release name normalises to the same string | Weak on its own |
+
+The first is what catches *the same video under a completely different name*: a
+plain copy or a rename shares every byte, so the name is irrelevant. Only files
+that collide on size are ever read, and only 128 KB of each, so this costs
+almost nothing even on a large library. Two different videos that happen to
+share a byte count will differ in their container header or index, so the hash
+separates them.
+
+The second catches the same content **re-encoded, resized or remuxed**, where
+the bytes are entirely different but the running time is not. The 30-second
+floor is there because two clips both eight seconds long are not evidence of
+anything.
+
+The third is the weakest and the one that cries wolf — release names are noisy,
+and stripping the noise out of "ASMR _ Haul (yay) _ triggers-1080p" leaves
+something a lot of unrelated files also normalise to. So a name match only
+counts toward **Possible duplicates** when the running times agree as well. It
+is still available on its own as the **Same name only** filter, for when that is
+what you are looking for.
+
+Name matching keeps the year, so a remake is not mistaken for the original:
+`Dune.2021.2160p.mkv` and `Dune.1984.480p.avi` stay apart, while
+`Blade.Runner.1982.1080p.BluRay.x264-GROUP.mkv` and
+`Blade Runner (1982) [720p].mp4` come together.
 
 Probing is one process per file, so results are cached by path + size + mtime:
 a rescan after adding a few files only probes the few that changed. The index

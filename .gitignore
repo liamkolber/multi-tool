@@ -8,4 +8,5 @@ bin/
 .dl-jobs.json
 .convert-jobs.json
 .library-index.json
+.library-thumbs/
 .reddit.json
