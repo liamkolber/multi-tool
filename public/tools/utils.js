@@ -13,32 +13,22 @@ import { buildPattern, inferPattern, explainPattern } from '../lib/regex.js';
 const MAX_TEST_LEN = 20_000;
 const MAX_MATCHES = 500;
 
-const SECTIONS = [
-  ['regex', 'Regex'],
-  ['json', 'JSON'],
-  ['encode', 'Encode'],
-  ['hash', 'Hash'],
-  ['time', 'Time'],
-  ['text', 'Text'],
-];
-
 const TEMPLATE = `
   <div class="tool-head">
     <h1 class="tool-title"><span class="tool-title-icon">🧪</span> Utilities</h1>
     <p class="tool-sub">Regex, JSON, encoding, hashes, timestamps and text — all local, nothing leaves the machine.</p>
   </div>
 
-  <div class="ut-tabs" id="ut-tabs">
-    ${SECTIONS.map(([id, label], i) =>
-      `<button class="ut-tab${i === 0 ? ' active' : ''}" type="button" data-sec="${id}">${label}</button>`).join('')}
-  </div>
-
   <!-- ---------------- Regex ---------------- -->
   <section class="ut-sec" data-sec="regex">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">Regex</h2>
+      <p class="ut-sec-sub">Build a pattern, work one out from examples, understand one, or test it.</p>
+    </header>
     <div class="ut-card">
       <div class="ut-row">
         <span class="ut-slash">/</span>
-        <input id="rx-pattern" class="ut-mono" type="text" placeholder="\d{3}-\w+" autocomplete="off" spellcheck="false" />
+        <input id="rx-pattern" class="ut-mono" type="text" placeholder="\\d{3}-\\w+" autocomplete="off" spellcheck="false" />
         <span class="ut-slash">/</span>
         <label class="ut-flag"><input type="checkbox" id="rx-g" checked /> g</label>
         <label class="ut-flag"><input type="checkbox" id="rx-i" /> i</label>
@@ -92,7 +82,11 @@ const TEMPLATE = `
   </section>
 
   <!-- ---------------- JSON ---------------- -->
-  <section class="ut-sec" data-sec="json" hidden>
+  <section class="ut-sec" data-sec="json">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">JSON</h2>
+      <p class="ut-sec-sub">Format or minify, with parse errors pointed at a line and column.</p>
+    </header>
     <div class="ut-card">
       <div class="ut-row">
         <button class="ut-btn primary" type="button" id="js-format">Format</button>
@@ -106,7 +100,11 @@ const TEMPLATE = `
   </section>
 
   <!-- ---------------- Encode ---------------- -->
-  <section class="ut-sec" data-sec="encode" hidden>
+  <section class="ut-sec" data-sec="encode">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">Encode</h2>
+      <p class="ut-sec-sub">Base64, URL components and HTML entities, in both directions.</p>
+    </header>
     <div class="ut-card">
       <div class="ut-row">
         <select id="en-mode">
@@ -126,7 +124,11 @@ const TEMPLATE = `
   </section>
 
   <!-- ---------------- Hash ---------------- -->
-  <section class="ut-sec" data-sec="hash" hidden>
+  <section class="ut-sec" data-sec="hash">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">Hash</h2>
+      <p class="ut-sec-sub">SHA-1, SHA-256, SHA-384 and SHA-512 of whatever you type.</p>
+    </header>
     <div class="ut-card">
       <textarea id="hs-in" class="ut-mono" rows="6" spellcheck="false" placeholder="Text to hash"></textarea>
       <div id="hs-out" class="hs-out"></div>
@@ -134,7 +136,11 @@ const TEMPLATE = `
   </section>
 
   <!-- ---------------- Time ---------------- -->
-  <section class="ut-sec" data-sec="time" hidden>
+  <section class="ut-sec" data-sec="time">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">Time</h2>
+      <p class="ut-sec-sub">Unix seconds or milliseconds, ISO 8601, UTC and local — converted every way at once.</p>
+    </header>
     <div class="ut-card">
       <div class="ut-row">
         <input id="tm-in" class="ut-mono" type="text" placeholder="1735689600, 1735689600000, or 2025-01-01T00:00:00Z" autocomplete="off" />
@@ -145,7 +151,11 @@ const TEMPLATE = `
   </section>
 
   <!-- ---------------- Text ---------------- -->
-  <section class="ut-sec" data-sec="text" hidden>
+  <section class="ut-sec" data-sec="text">
+    <header class="ut-sec-head">
+      <h2 class="ut-sec-title">Text</h2>
+      <p class="ut-sec-sub">Case, slugs, trimming, deduping, sorting and reversing lines.</p>
+    </header>
     <div class="ut-card">
       <div class="ut-row ut-wrap">
         <button class="ut-btn" type="button" data-tx="upper">UPPER</button>
@@ -185,23 +195,22 @@ const IS_ANCHOR = new Set(['start', 'end', 'boundary']);
 
 let rxParts = [];
 let rxMode = 'build';
-let utSection = SECTIONS[0][0];
 
-// Coming back to a tool should put you where you left off, not at the top.
+// Coming back should leave the regex where you left it rather than resetting.
 const UT_PREFS_KEY = 'multitool:utils';
+const RX_MODES = ['build', 'infer', 'explain', 'test'];
 
 function utSavePrefs() {
   try {
-    localStorage.setItem(UT_PREFS_KEY, JSON.stringify({ section: utSection, rxMode }));
+    localStorage.setItem(UT_PREFS_KEY, JSON.stringify({ rxMode }));
   } catch { /* ignore quota */ }
 }
 
 function utLoadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(UT_PREFS_KEY));
-    if (saved && SECTIONS.some(([id]) => id === saved.section)) utSection = saved.section;
-    if (saved && ['build', 'infer', 'explain', 'test'].includes(saved.rxMode)) rxMode = saved.rxMode;
-  } catch { /* keep the defaults */ }
+    if (saved && RX_MODES.includes(saved.rxMode)) rxMode = saved.rxMode;
+  } catch { /* keep the default */ }
 }
 
 // --- Helpers ---
@@ -479,13 +488,6 @@ function txCount() {
 }
 
 // --- Wiring ---
-function showSection(id) {
-  utSection = id;
-  document.querySelectorAll('.ut-sec').forEach((s) => { s.hidden = s.dataset.sec !== id; });
-  document.querySelectorAll('.ut-tab').forEach((t) => t.classList.toggle('active', t.dataset.sec === id));
-  utSavePrefs();
-}
-
 function showRxMode(mode) {
   rxMode = mode;
   document.querySelectorAll('.ut-sec[data-sec="regex"] .ut-card[data-mode]')
@@ -497,11 +499,6 @@ function showRxMode(mode) {
 }
 
 function bindUtils(panel) {
-  panel.querySelector('#ut-tabs').addEventListener('click', (e) => {
-    const tab = e.target.closest('[data-sec]');
-    if (tab) showSection(tab.dataset.sec);
-  });
-
   panel.addEventListener('click', (e) => {
     const copy = e.target.closest('[data-copy]');
     if (copy) copyFrom(copy.dataset.copy);
@@ -606,7 +603,6 @@ export const tool = {
     panel.innerHTML = TEMPLATE;
     utLoadPrefs();
     bindUtils(panel);
-    showSection(utSection);
     showRxMode(rxMode);
   },
   show() {

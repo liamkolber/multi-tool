@@ -1,26 +1,27 @@
 /* Utilities: section tabs, cards, the regex builder and its results. */
 
-.ut-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
-.ut-tab {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-dim);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  padding: 7px 15px;
-  transition: color 0.15s, border-color 0.15s;
+/* Every section is on the page at once; the rule and the heading are what set
+   them apart. */
+.ut-sec { display: flex; flex-direction: column; gap: 12px; }
+.ut-sec + .ut-sec {
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
 }
-.ut-tab:hover { color: var(--text); border-color: var(--text-dim); }
-.ut-tab.active { color: var(--text); border-color: var(--accent); background: var(--surface-2); }
+.ut-sec:last-child { padding-bottom: 40px; }
 
-.ut-sec { display: flex; flex-direction: column; gap: 12px; padding-bottom: 40px; }
+.ut-sec-head { margin-bottom: 2px; }
+.ut-sec-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.ut-sec-sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 0; line-height: 1.5; }
 
 /* An author "display" rule outranks the UA stylesheet's [hidden] { display:none },
-   so every section rendered at once no matter which tab was active. These put
-   the attribute back in charge. */
-.ut-sec[hidden],
+   which is what kept the regex mode cards all on screen at once. This puts the
+   attribute back in charge. */
 .ut-card[hidden] { display: none !important; }
 
 /* --- Regex: pick what you are here to do --- */

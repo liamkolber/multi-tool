@@ -234,9 +234,8 @@ directories, and stops at 12 levels deep or 20,000 files.
 The small conversions you reach for constantly, with no server half at all —
 nothing it does leaves the browser.
 
-Six sections behind their own tabs — Regex, JSON, Encode, Hash, Time and Text —
-so you only ever see the one you came for. The tab and the regex mode you last
-used are remembered.
+Six sections on one page — Regex, JSON, Encode, Hash, Time and Text — each
+under its own heading rather than hidden behind a tab.
 
 **Regex** starts by asking what you are there to do, and shows only that:
 
