@@ -110,6 +110,12 @@ let lbFdTop = false;
 let lbRoot = null;
 let lbStream = null;
 const lbFilters = new Set();
+// Set when the sort was chosen on your behalf rather than by you, so it can be
+// put back afterwards without overriding a deliberate choice.
+let lbSortAuto = null;
+// Whether a duplicate filter was on last time round, so the switch fires on the
+// way in rather than on every toggle while already there.
+let lbDupeFiltersOn = false;
 let lbQuery = '';
 let lbSort = 'name';
 let lbThumbs = true;
@@ -425,6 +431,31 @@ const FILTERS = [
 ];
 
 const FILTER_BY_ID = new Map(FILTERS.map((f) => [f.id, f]));
+const DUPE_FILTERS = new Set(FILTERS.filter((f) => f.group === 'Duplicates').map((f) => f.id));
+
+// A duplicate filter is close to useless under any other order — you get a list
+// of files that each have a match somewhere, with no way to see what they match.
+// So picking one switches to the grouping sort, and dropping the last one puts
+// your previous choice back. Changing the sort by hand clears the arrangement,
+// because from then on it is your call rather than ours.
+function lbSyncDupeSort() {
+  const wantsGrouping = [...lbFilters].some((id) => DUPE_FILTERS.has(id));
+
+  // Only on the way in and the way out. Reacting to every toggle would grab the
+  // sort back the moment you added a second duplicate filter, undoing a choice
+  // you had just made by hand.
+  if (wantsGrouping && !lbDupeFiltersOn && lbSort !== 'dupe') {
+    lbSortAuto = lbSort;
+    lbSort = 'dupe';
+    lb.sort.value = 'dupe';
+  } else if (!wantsGrouping && lbDupeFiltersOn && lbSortAuto !== null && lbSort === 'dupe') {
+    lbSort = lbSortAuto;
+    lb.sort.value = lbSortAuto;
+    lbSortAuto = null;
+  }
+
+  lbDupeFiltersOn = wantsGrouping;
+}
 
 function lbVisible() {
   const active = [...lbFilters].map((id) => FILTER_BY_ID.get(id)).filter(Boolean);
@@ -599,7 +630,7 @@ function lbRenderFilters() {
 }
 
 
-function lbRowHtml(f) {
+function lbRowHtml(f, prev, next) {
   const dupe = lbDupes.get(f.path);
   const reason = lbIsDuplicate(dupe) ? lbDupeReason(dupe) : '';
   const subs = f.subTracks
@@ -630,10 +661,17 @@ function lbRowHtml(f) {
          onerror="this.classList.add('failed')" />`
     : '';
 
-  // Banding by set only means anything when the sets are actually adjacent.
-  const band = lbSort === 'dupe' && dupe && dupe.groupId % 2 === 0 ? ' band' : '';
+  // Only meaningful once the sets are actually adjacent, which is what the
+  // "Duplicate sets" order guarantees.
+  const grouped = lbSort === 'dupe' && dupe && lbIsDuplicate(dupe);
+  const idOf = (x) => (x ? (lbDupes.get(x.path) || {}).groupId : undefined);
+  const band = grouped && dupe.groupId % 2 === 0 ? ' band' : '';
+  // Closing the gap between rows of one set makes it read as a single block
+  // rather than as neighbours that happen to look alike.
+  const joinUp = grouped && idOf(prev) === dupe.groupId ? ' set-cont' : '';
+  const joinDown = grouped && idOf(next) === dupe.groupId ? ' set-open' : '';
 
-  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}${band}">
+  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}${band}${joinUp}${joinDown}">
     ${thumb}
     <div class="lb-row-main">
       <div class="lb-row-name" title="${esc(f.path)}">${esc(f.name)}</div>
@@ -676,17 +714,27 @@ function lbWatchMore(total) {
 
 // Appends rather than re-rendering: replacing innerHTML on a list you are
 // halfway down throws away the scroll position you were reading from.
+// Rows need their neighbours to know whether they continue a set, and the
+// neighbour of a chunk's first row lives in the previous chunk — so this always
+// indexes into the whole list rather than into the slice.
+function lbRowsHtml(rows, from, to) {
+  let html = '';
+  for (let i = from; i < to; i++) html += lbRowHtml(rows[i], rows[i - 1], rows[i + 1]);
+  return html;
+}
+
 function lbShowMore() {
   const rows = lbVisible();
-  const next = rows.slice(lbShown, lbShown + RENDER_CHUNK);
-  if (!next.length) return;
+  const upto = Math.min(lbShown + RENDER_CHUNK, rows.length);
+  if (upto <= lbShown) return;
 
   const sentinel = lb.list.querySelector('#lb-more');
-  const html = next.map(lbRowHtml).join('');
+  const html = lbRowsHtml(rows, lbShown, upto);
+  const added = upto - lbShown;
   if (sentinel) sentinel.insertAdjacentHTML('beforebegin', html);
   else lb.list.insertAdjacentHTML('beforeend', html);
 
-  lbShown += next.length;
+  lbShown += added;
   const tail = lb.list.querySelector('#lb-more');
   if (tail) tail.outerHTML = lbMoreHtml(lbShown, rows.length);
   lbWatchMore(rows.length);
@@ -700,8 +748,7 @@ function lbRenderList() {
     return;
   }
   lbShown = Math.min(Math.max(RENDER_CHUNK, lbShown), rows.length);
-  lb.list.innerHTML = rows.slice(0, lbShown).map(lbRowHtml).join('')
-    + lbMoreHtml(lbShown, rows.length);
+  lb.list.innerHTML = lbRowsHtml(rows, 0, lbShown) + lbMoreHtml(lbShown, rows.length);
   lbWatchMore(rows.length);
 }
 
@@ -949,6 +996,7 @@ function bindLibrary() {
 
   lb.sort.addEventListener('change', () => {
     lbSort = lb.sort.value;
+    lbSortAuto = null; // an explicit choice stands until the next explicit one
     lbShown = RENDER_CHUNK;
     lbRenderList();
   });
@@ -1009,6 +1057,7 @@ function bindLibrary() {
     if (id === 'all') lbFilters.clear();
     else if (lbFilters.has(id)) lbFilters.delete(id);
     else lbFilters.add(id);
+    lbSyncDupeSort();
     lbShown = RENDER_CHUNK;
     lbRenderFilters();
     lbRenderList();

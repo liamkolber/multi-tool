@@ -253,6 +253,17 @@ list on its own. **All** clears the selection. Each chip's count is what it
 would leave *given the other chips already on*, so it says what clicking it does
 rather than what it would do alone.
 
+Picking any duplicate filter switches the order to **Duplicate sets** for you,
+since that filter is close to useless under any other one — you would get a list
+of files that each have a match somewhere with no way to see what they match.
+Dropping the last one puts your previous order back. Changing the sort by hand
+stops it rearranging anything, and it only ever fires on the way in and the way
+out, so adding a second duplicate filter never takes back a choice you just
+made.
+
+Members of a set are drawn as one block — the gap between them closed and the
+facing corners squared — so a set reads as a single thing with several rows.
+
 They are grouped by kind, duplicates, quality and size. Beyond the duplicate
 signals there are vertical video, files with no audio track, under 20 MB, over
 an hour, under five minutes, and the quality and subtitle filters.

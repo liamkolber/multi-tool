@@ -145,6 +145,17 @@
 /* Sorted into sets, alternate ones get a faint tint so where one ends and the
    next begins is visible without a header row per group. */
 .lb-row.band { background: var(--surface-2); }
+
+/* Members of one set draw as a single block: the 6px list gap is cancelled
+   between them and the facing corners squared off, so a set reads as one thing
+   with several rows rather than rows that happen to sit next to each other. */
+.lb-row.set-open { border-bottom-left-radius: 2px; border-bottom-right-radius: 2px; }
+.lb-row.set-cont {
+  margin-top: -6px;
+  border-top-left-radius: 2px;
+  border-top-right-radius: 2px;
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
 .lb-row.bad { border-color: #6b2f2f; }
 
 /* Poster frames. A fixed box keeps rows the same height whether the image has
