@@ -222,9 +222,33 @@ What it surfaces:
   library of thousands costs nothing until you actually look at it. The cache key
   folds in size and mtime, so an edited file gets a fresh frame rather than a
   stale one. Toggle them off in the controls if you would rather have the density
+- **Archives** — `.zip`, `.rar`, `.7z`, `.iso` and friends, indexed by size but
+  never handed to ffmpeg, since there is nothing in one for it to read
 - **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)
 
-Any row can be revealed in Explorer, or handed straight to the Converter.
+Every row offers **Open** (hands the file to whatever Windows opens it with,
+exactly as a double-click would), **Reveal** (shows it in Explorer) and, for
+media, **Convert** (hands it to the Converter).
+
+### Folders
+
+The **Folders** view lists every subdirectory under the scanned root with its
+recursive size and file count — what the folder holds including everything
+nested beneath it — sortable by size, file count, name, path or depth, with a
+"top level only" toggle for the overview.
+
+Each row also reports what sits *directly* in that folder, because the two
+numbers diverging is the interesting case: a folder can be enormous while
+holding nothing itself.
+
+These totals count **every** file, not just the media, so they agree with what
+Explorer shows you. That is also why the scan stats every file it passes rather
+than only the ones worth probing — `stat` is cheap next to an ffmpeg process.
+Folders that the walk skips (hidden ones, `node_modules`, recycle bins,
+Windows system directories) are not counted, so a scan pointed at a system drive
+will not match Explorer there.
+
+
 
 ### How duplicates are decided
 

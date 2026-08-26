@@ -179,6 +179,30 @@
 }
 .lb-act:hover { color: var(--text); border-color: var(--text-dim); }
 
+/* --- Views and folder rows --- */
+.lb-views { display: flex; gap: 6px; margin-bottom: 14px; }
+
+.lb-fd-row { align-items: center; }
+.lb-fd-size {
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 82px;
+  text-align: right;
+}
+
+/* Sized against the largest folder currently on screen, so the shape of the
+   library reads at a glance. */
+.lb-fd-bar {
+  background: var(--surface-3);
+  border-radius: 999px;
+  height: 4px;
+  overflow: hidden;
+  margin: 6px 0 5px;
+}
+.lb-fd-fill { background: var(--accent); height: 100%; }
+
 .lb-empty {
   color: var(--text-dim);
   font-size: 13.5px;

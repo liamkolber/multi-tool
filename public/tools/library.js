@@ -25,6 +25,11 @@ const TEMPLATE = `
 
   <div id="lb-stats" class="lb-stats" hidden></div>
 
+  <div id="lb-views" class="lb-views" hidden>
+    <button class="lb-chip active" type="button" data-view="files">Files</button>
+    <button class="lb-chip" type="button" data-view="folders">Folders</button>
+  </div>
+
   <div id="lb-controls" class="lb-controls" hidden>
     <input id="lb-search" type="search" placeholder="Search name, folder, codec…" autocomplete="off" />
     <label class="lb-toggle"><input type="checkbox" id="lb-thumbs" checked /> Thumbnails</label>
@@ -38,7 +43,21 @@ const TEMPLATE = `
     <div id="lb-filters" class="lb-filters"></div>
   </div>
 
-  <div id="lb-list" class="lb-list"></div>`;
+  <div id="lb-fd-controls" class="lb-controls" hidden>
+    <input id="lb-fd-search" type="search" placeholder="Search folders…" autocomplete="off" />
+    <select id="lb-fd-sort">
+      <option value="size">Largest first</option>
+      <option value="files">Most files</option>
+      <option value="ownSize">Largest ignoring subfolders</option>
+      <option value="name">Name</option>
+      <option value="rel">Path</option>
+      <option value="depth">Depth</option>
+    </select>
+    <label class="lb-toggle"><input type="checkbox" id="lb-fd-top" /> Top level only</label>
+  </div>
+
+  <div id="lb-list" class="lb-list"></div>
+  <div id="lb-folders" class="lb-list" hidden></div>`;
 
 const lb = {};
 function cacheEls() {
@@ -56,10 +75,21 @@ function cacheEls() {
     thumbs: $('lb-thumbs'),
     filters: $('lb-filters'),
     list: $('lb-list'),
+    views: $('lb-views'),
+    fdControls: $('lb-fd-controls'),
+    fdSearch: $('lb-fd-search'),
+    fdSort: $('lb-fd-sort'),
+    fdTop: $('lb-fd-top'),
+    folders: $('lb-folders'),
   });
 }
 
 let lbFiles = [];
+let lbFolders = [];
+let lbView = 'files';
+let lbFdQuery = '';
+let lbFdSort = 'size';
+let lbFdTop = false;
 let lbRoot = null;
 let lbStream = null;
 let lbFilter = 'all';
@@ -190,7 +220,7 @@ function groupBy(files, keyOf) {
 // path -> { identical, length, name, group } where group is the largest set of
 // files this one was matched with.
 function lbDuplicates(files) {
-  const videos = files.filter((f) => f.kind === 'video' || f.kind === 'audio');
+  const videos = files.filter((f) => f.kind === 'video' || f.kind === 'audio' || f.kind === 'archive');
 
   const identical = groupBy(videos, (f) => (f.sig && f.size ? `${f.size}:${f.sig}` : null));
   const byLength = groupBy(videos, (f) =>
@@ -236,6 +266,7 @@ const FILTERS = [
   { id: 'all', label: 'All', test: () => true },
   { id: 'video', label: 'Video', test: (f) => f.kind === 'video' },
   { id: 'audio', label: 'Audio', test: (f) => f.kind === 'audio' },
+  { id: 'archive', label: 'Archives', test: (f) => f.kind === 'archive' },
   { id: 'sd', label: 'Below 1080p', test: (f) => f.kind === 'video' && f.height && f.height < 1000 },
   { id: 'nosubs', label: 'No subtitles', test: (f) => f.kind === 'video' && !f.subTracks && !(f.sidecars || []).length },
   { id: 'dupes', label: 'Possible duplicates', test: (f) => lbIsDuplicate(lbDupes.get(f.path)) },
@@ -267,6 +298,70 @@ function lbVisible() {
   });
 }
 
+// --- Folders -----------------------------------------------------------------
+function lbFoldersVisible() {
+  const q = lbFdQuery.toLowerCase();
+  let out = lbFolders.filter((f) => f.depth > 0); // the root itself is the total, not a row
+  if (lbFdTop) out = out.filter((f) => f.depth === 1);
+  if (q) out = out.filter((f) => f.rel.toLowerCase().includes(q));
+
+  const dir = ['name', 'rel'].includes(lbFdSort) ? 1 : -1;
+  return out.sort((a, b) => {
+    if (lbFdSort === 'name') return a.name.localeCompare(b.name);
+    if (lbFdSort === 'rel') return a.rel.localeCompare(b.rel);
+    return ((a[lbFdSort] || 0) - (b[lbFdSort] || 0)) * dir;
+  });
+}
+
+function lbFolderRowHtml(f, widest) {
+  // A bar against the biggest folder on screen makes the shape of the library
+  // readable at a glance, which a column of numbers does not.
+  const pct = widest ? Math.max(1, (f.size / widest) * 100) : 0;
+  // "own" is what sits directly in the folder; the difference is what is nested
+  // below it. Worth showing, because a folder can be huge while holding nothing.
+  const own = f.ownSize && f.ownSize !== f.size
+    ? `${lbBytes(f.ownSize)} here, rest in subfolders`
+    : `${fmtNumber(f.ownFiles)} file${f.ownFiles === 1 ? '' : 's'} here`;
+
+  return `<div class="lb-row lb-fd-row">
+    <div class="lb-row-main">
+      <div class="lb-row-name" title="${esc(f.path)}">${esc(f.rel)}</div>
+      <div class="lb-fd-bar"><div class="lb-fd-fill" style="width:${pct}%"></div></div>
+      <div class="lb-row-meta">${fmtNumber(f.files)} files · ${esc(own)}</div>
+    </div>
+    <div class="lb-fd-size">${lbBytes(f.size)}</div>
+    <div class="lb-row-acts">
+      <button class="lb-act" type="button" data-fd-open="${esc(f.rel)}" title="Show these files">Files</button>
+      <button class="lb-act" type="button" data-reveal="${esc(f.path)}" title="Show in Explorer">Reveal</button>
+    </div>
+  </div>`;
+}
+
+function lbRenderFolders() {
+  const rows = lbFoldersVisible();
+  if (!rows.length) {
+    lb.folders.innerHTML = `<div class="lb-empty">${lbFolders.length ? 'No folders match that.' : 'No subfolders found.'}</div>`;
+    return;
+  }
+  const widest = Math.max(...rows.map((f) => f.size));
+  const shown = rows.slice(0, RENDER_CAP);
+  lb.folders.innerHTML = shown.map((f) => lbFolderRowHtml(f, widest)).join('')
+    + (rows.length > shown.length
+      ? `<div class="lb-empty">Showing ${fmtNumber(shown.length)} of ${fmtNumber(rows.length)} — narrow the search to see the rest.</div>`
+      : '');
+}
+
+function lbShowView(view) {
+  lbView = view;
+  lb.views.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  lb.controls.hidden = view !== 'files' || !lbFiles.length;
+  lb.list.hidden = view !== 'files';
+  lb.fdControls.hidden = view !== 'folders';
+  lb.folders.hidden = view !== 'folders';
+  if (view === 'folders') lbRenderFolders();
+  else lbRenderList();
+}
+
 // --- Rendering ---
 function lbRenderStats() {
   if (!lbFiles.length) { lb.stats.hidden = true; return; }
@@ -274,6 +369,7 @@ function lbRenderStats() {
   const totalTime = lbFiles.reduce((n, f) => n + (f.duration || 0), 0);
   const cells = [
     ['Files', fmtNumber(lbFiles.length)],
+    ['Folders', fmtNumber(Math.max(0, lbFolders.length - 1))],
     ['Total size', lbBytes(totalSize)],
     ['Runtime', `${Math.round(totalTime / 3600)} h`],
     ['Below 1080p', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'sd').test).length)],
@@ -325,15 +421,16 @@ function lbRowHtml(f) {
         reason ? ` · <span class="lb-dupe-why">${esc(reason)}</span>` : ''}</div>
     </div>
     <div class="lb-row-acts">
-      ${f.kind !== 'other' ? `<button class="lb-act" type="button" data-convert="${esc(f.path)}" title="Open in Converter">Convert</button>` : ''}
-      <button class="lb-act" type="button" data-reveal="${esc(f.path)}" title="Show in folder">Reveal</button>
+      <button class="lb-act" type="button" data-open="${esc(f.path)}" title="Open with the default app">Open</button>
+      ${f.kind === 'video' || f.kind === 'audio' || f.kind === 'image'
+        ? `<button class="lb-act" type="button" data-convert="${esc(f.path)}" title="Open in Converter">Convert</button>` : ''}
+      <button class="lb-act" type="button" data-reveal="${esc(f.path)}" title="Show in Explorer">Reveal</button>
     </div>
   </div>`;
 }
 
 function lbRenderList() {
   const rows = lbVisible();
-  lb.controls.hidden = lbFiles.length === 0;
   if (!lbFiles.length) { lb.list.innerHTML = ''; return; }
   if (!rows.length) {
     lb.list.innerHTML = '<div class="lb-empty">Nothing matches that.</div>';
@@ -348,9 +445,10 @@ function lbRenderList() {
 
 function lbRenderAll() {
   lbDupes = lbDuplicates(lbFiles);
+  lb.views.hidden = lbFiles.length === 0 && lbFolders.length === 0;
   lbRenderStats();
   lbRenderFilters();
-  lbRenderList();
+  lbShowView(lbView);
 }
 
 function lbRenderProgress(p) {
@@ -381,6 +479,7 @@ async function lbLoadIndex() {
     const json = await res.json();
     if (json.status === 'ok') {
       lbFiles = json.data.files || [];
+      lbFolders = json.data.folders || [];
       lbRoot = json.data.root;
       if (lbRoot) lb.root.value = lbRoot;
       lbRenderAll();
@@ -422,6 +521,13 @@ async function lbStartScan() {
 
 async function lbCancelScan() {
   try { await fetch('/api/library/cancel', { method: 'POST' }); } catch { /* ignore */ }
+}
+
+// Opens the file with whatever Windows (or the desktop) associates with it.
+async function lbOpen(path) {
+  try {
+    await fetch(`/api/library/open?path=${encodeURIComponent(path)}`, { method: 'POST' });
+  } catch { /* ignore */ }
 }
 
 async function lbReveal(path) {
@@ -476,6 +582,33 @@ function bindLibrary() {
     lbRenderList();
   });
 
+  lb.views.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-view]');
+    if (btn) lbShowView(btn.dataset.view);
+  });
+
+  lb.fdSearch.addEventListener('input', debounce(() => {
+    lbFdQuery = lb.fdSearch.value.trim();
+    lbRenderFolders();
+  }, 120));
+
+  lb.fdSort.addEventListener('change', () => { lbFdSort = lb.fdSort.value; lbRenderFolders(); });
+  lb.fdTop.addEventListener('change', () => { lbFdTop = lb.fdTop.checked; lbRenderFolders(); });
+
+  lb.folders.addEventListener('click', (e) => {
+    const reveal = e.target.closest('[data-reveal]');
+    if (reveal) { lbReveal(reveal.dataset.reveal); return; }
+    // Jumping to the file list filtered to this folder is what you almost
+    // always want next after spotting a big one.
+    const open = e.target.closest('[data-fd-open]');
+    if (!open) return;
+    lb.search.value = open.dataset.fdOpen;
+    lbQuery = open.dataset.fdOpen;
+    lbFilter = 'all';
+    lbRenderFilters();
+    lbShowView('files');
+  });
+
   lb.filters.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-filter]');
     if (!chip) return;
@@ -485,6 +618,8 @@ function bindLibrary() {
   });
 
   lb.list.addEventListener('click', (e) => {
+    const open = e.target.closest('[data-open]');
+    if (open) { lbOpen(open.dataset.open); return; }
     const reveal = e.target.closest('[data-reveal]');
     if (reveal) { lbReveal(reveal.dataset.reveal); return; }
     const convert = e.target.closest('[data-convert]');
