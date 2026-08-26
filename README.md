@@ -386,3 +386,28 @@ can be revoked from <https://www.reddit.com/prefs/apps> at any time.
 
 The server binds to `127.0.0.1` (override with `HOST`), and the tools that take
 input reject cross-origin requests.
+
+### Idling
+
+The app never asks the system to stay awake — nothing here calls
+`SetThreadExecutionState` or takes a power request, so it cannot keep the
+machine from sleeping. Sitting idle with no browser tab attached, the server
+uses no measurable CPU at all.
+
+The one piece of ongoing chatter is the progress stream each tool holds open,
+which the server pings every 25 seconds to keep alive. Those close themselves
+once the tab has been hidden for 30 seconds with no work in flight, and reopen
+and resync when you come back — which also covers waking from sleep, since a
+suspended machine's sockets are usually dead on resume. A download, conversion
+or scan still in flight keeps its stream open, because reporting that progress
+is the only reason it exists.
+
+If the machine is not sleeping when you expect it to, the cause is almost
+certainly the OS rather than this app:
+
+- `powercfg /a` — which sleep states the hardware supports. On S3 the idle
+  timer is reset by user input and power requests, never by network traffic.
+- `powercfg /requests` — from an elevated prompt, names whatever is actually
+  holding the machine awake.
+- `powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE` — the idle timeout,
+  which on a Balanced plan can default to hours on AC power.
