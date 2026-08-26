@@ -201,6 +201,31 @@ failed and cancelled jobs with a **Retry** that replays the exact settings.
 `ffmpeg -i` when it isn't. Run `npm run get-tools` to add it — it comes out of
 the same archive as ffmpeg, so it costs nothing extra.
 
+## 📚 Library
+
+Point it at a folder and it walks the whole tree, probes every media file it
+finds, and hands the browser one flat index. Everything after that — search,
+sort, filters — runs against that index in memory, so it is instant.
+
+What it surfaces:
+
+- **Totals** — file count, disk used, combined runtime
+- **Below 1080p** — what is worth re-pulling at a better quality
+- **No subtitles** — neither an embedded track nor a sidecar `.srt` beside it
+- **Possible duplicates** — the same film under two naming conventions, matched
+  by stripping release tags down to title + year. The year is kept, so a remake
+  is not mistaken for a duplicate of the original
+- **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)
+
+Any row can be revealed in Explorer, or handed straight to the Converter.
+
+Probing is one process per file, so results are cached by path + size + mtime:
+a rescan after adding a few files only probes the few that changed. The index
+lives in a gitignored `.library-index.json`.
+
+The walk skips hidden folders, `node_modules`, recycle bins and Windows system
+directories, and stops at 12 levels deep or 20,000 files.
+
 ## 👽 Reddit
 
 Signs into **your own** Reddit account through the official OAuth API and shows
@@ -264,6 +289,7 @@ Override the redirect URI with `REDDIT_REDIRECT_URI` if you run on another port.
 browser  ──►  server.mjs  ──►  lib/tools/media.mjs       ──►  YTS / AniList / Jikan
               (router)    ──►  lib/tools/downloader.mjs  ──►  yt-dlp
                           ──►  lib/tools/convert.mjs     ──►  ffmpeg
+                          ──►  lib/tools/library.mjs     ──►  ffprobe
                           ──►  lib/tools/reddit.mjs      ──►  oauth.reddit.com
 ```
 

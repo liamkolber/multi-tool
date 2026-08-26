@@ -470,6 +470,21 @@ export const tool = {
     cvConnect();
   },
   show() {
+    // The Library hands a file over through sessionStorage rather than by
+    // importing this module: panels mount lazily, so it may well fire before
+    // this tool exists. Reading it here — after mount, on every show — catches
+    // it either way.
+    let handed = null;
+    try {
+      handed = sessionStorage.getItem('multitool:convert-path');
+      if (handed) sessionStorage.removeItem('multitool:convert-path');
+    } catch { /* private mode, or storage disabled */ }
+
+    if (handed) {
+      cv.path.value = handed;
+      cvLoadPath();
+      return;
+    }
     cv.path?.focus();
   },
 };

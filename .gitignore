@@ -7,4 +7,5 @@ bin/
 .dl-config.json
 .dl-jobs.json
 .convert-jobs.json
+.library-index.json
 .reddit.json
