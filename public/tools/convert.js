@@ -6,6 +6,7 @@
 // nothing else in this file changes shape.
 
 import { $, esc, fmtNumber } from '../lib/dom.js';
+import { idleStream } from '../lib/stream.js';
 
 const TEMPLATE = `
   <div class="tool-head">
@@ -411,16 +412,17 @@ async function cvLoadJobs() {
 
 function cvConnect() {
   if (cvStream) return;
-  try { cvStream = new EventSource('/api/convert/events'); } catch { return; }
-  cvStream.onmessage = (e) => {
-    let job;
-    try { job = JSON.parse(e.data); } catch { return; }
-    if (!job || !job.id) return;
-    if (job.removed) { cvJobs.delete(job.id); cvRenderJobs(); return; }
-    cvJobs.set(job.id, job);
-    cvRenderJobs();
-  };
-  cvStream.onerror = () => { /* EventSource reconnects on its own */ };
+  cvStream = idleStream('/api/convert/events', {
+    // A conversion in flight keeps the stream open on a hidden tab.
+    isBusy: () => [...cvJobs.values()].some((j) => CV_LIVE.has(j.status)),
+    onWake: cvLoadJobs,
+    onMessage: (job) => {
+      if (!job || !job.id) return;
+      if (job.removed) { cvJobs.delete(job.id); cvRenderJobs(); return; }
+      cvJobs.set(job.id, job);
+      cvRenderJobs();
+    },
+  });
 }
 
 function bindConverter() {

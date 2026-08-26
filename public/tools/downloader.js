@@ -4,6 +4,7 @@
 // renders whatever the /api/dl/events stream reports back.
 
 import { $, esc, debounce, fmtNumber } from '../lib/dom.js';
+import { idleStream } from '../lib/stream.js';
 
 const TEMPLATE = `
   <div class="tool-head">
@@ -373,31 +374,28 @@ async function dlLoadJobs() {
 
 function dlConnect() {
   if (dlStream) return;
-  try {
-    dlStream = new EventSource('/api/dl/events');
-  } catch {
-    return;
-  }
-  dlStream.onmessage = (e) => {
-    let job;
-    try { job = JSON.parse(e.data); } catch { return; }
-    if (!job || !job.id) return; // the opening hello frame
-    // A retry supersedes the attempt it replayed; the server says so here.
-    if (job.removed) {
-      dlJobs.delete(job.id);
+  dlStream = idleStream('/api/dl/events', {
+    // Downloads in flight keep the stream open even on a hidden tab — their
+    // progress is the whole reason it is there.
+    isBusy: () => [...dlJobs.values()].some((j) => DL_LIVE.has(j.status)),
+    onWake: dlLoadJobs,
+    onMessage: (job) => {
+      if (!job || !job.id) return; // the opening hello frame
+      // A retry supersedes the attempt it replayed; the server says so here.
+      if (job.removed) {
+        dlJobs.delete(job.id);
+        dlRenderJobs();
+        return;
+      }
+      dlJobs.set(job.id, job);
       dlRenderJobs();
-      return;
-    }
-    dlJobs.set(job.id, job);
-    dlRenderJobs();
-    // A job that picked a new folder is the server's record of "last used".
-    if (job.folder && dlTools && job.folder !== dlTools.dir) {
-      dlTools.dir = job.folder;
-      dlRenderSaveDir();
-    }
-  };
-  // EventSource reconnects on its own; a refetch resyncs anything missed.
-  dlStream.onerror = () => { /* handled by the browser */ };
+      // A job that picked a new folder is the server's record of "last used".
+      if (job.folder && dlTools && job.folder !== dlTools.dir) {
+        dlTools.dir = job.folder;
+        dlRenderSaveDir();
+      }
+    },
+  });
 }
 
 // Called every time the tab is shown; the heavy lifting only runs once.

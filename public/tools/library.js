@@ -5,6 +5,7 @@
 // Same idea as the Reddit tool: fetch once, then never wait again.
 
 import { $, esc, fmtNumber, debounce } from '../lib/dom.js';
+import { idleStream } from '../lib/stream.js';
 
 const TEMPLATE = `
   <div class="tool-head">
@@ -343,20 +344,23 @@ function lbOpenInConverter(path) {
   location.hash = '#/convert';
 }
 
+let lbScanning = false;
+
 function lbConnect() {
   if (lbStream) return;
-  try { lbStream = new EventSource('/api/library/events'); } catch { return; }
-  let wasScanning = false;
-  lbStream.onmessage = (e) => {
-    let p;
-    try { p = JSON.parse(e.data); } catch { return; }
-    lbRenderProgress(p);
-    if (p.error) lbShowError(p.error);
-    // A scan that just finished has a new index waiting.
-    if (wasScanning && !p.scanning) lbLoadIndex();
-    wasScanning = p.scanning;
-  };
-  lbStream.onerror = () => { /* EventSource reconnects on its own */ };
+  lbStream = idleStream('/api/library/events', {
+    // A scan in progress keeps the stream open on a hidden tab.
+    isBusy: () => lbScanning,
+    // Away long enough to miss the end of a scan? Pick up the new index.
+    onWake: lbLoadIndex,
+    onMessage: (p) => {
+      lbRenderProgress(p);
+      if (p.error) lbShowError(p.error);
+      // A scan that just finished has a new index waiting.
+      if (lbScanning && !p.scanning) lbLoadIndex();
+      lbScanning = !!p.scanning;
+    },
+  });
 }
 
 function bindLibrary() {
