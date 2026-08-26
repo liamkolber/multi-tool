@@ -109,7 +109,7 @@ let lbFdSort = 'size';
 let lbFdTop = false;
 let lbRoot = null;
 let lbStream = null;
-let lbFilter = 'all';
+const lbFilters = new Set();
 let lbQuery = '';
 let lbSort = 'name';
 let lbThumbs = true;
@@ -154,7 +154,13 @@ function lbLoadPrefs() {
   } catch { /* keep the default */ }
 }
 
-const RENDER_CAP = 400; // the DOM, not the data — filters still see everything
+// Rows are added a chunk at a time as you reach the end of the list, rather
+// than all at once. A hard cap meant a thousand duplicates you could never get
+// to; rendering all of them up front means thirty thousand DOM nodes before you
+// have looked at one.
+const RENDER_CHUNK = 300;
+let lbShown = RENDER_CHUNK;
+let lbMoreObserver = null;
 
 // --- Formatting ---
 function lbBytes(n) {
@@ -230,6 +236,18 @@ function lbClearError() {
 // Two clips both eight seconds long are not evidence of anything.
 const MIN_DUP_DURATION = 30;
 
+// Running times are compared to half a second rather than rounded to the
+// nearest one. Rounding put every 33-minute video in the same bucket, which on
+// a few thousand files is hundreds of unrelated collisions; a re-encode of the
+// same source lands within a frame or two of the original, so the tolerance can
+// be this tight without losing the case the signal exists for.
+const LENGTH_TOLERANCE = 0.5;
+
+// Two files of the same length whose sizes are within this of each other are
+// almost certainly the same content. Wider than a re-encode at a different CRF,
+// narrower than 1080p versus 480p.
+const SIZE_TOLERANCE = 0.12;
+
 // Windows filenames are case-insensitive, so "Clip.mp4" and "clip.mp4" in two
 // folders are the same name.
 function lbNameKey(name) {
@@ -251,15 +269,69 @@ function groupBy(files, keyOf) {
   return out;
 }
 
-// path -> { identical, length, name, group } where group is the largest set of
-// files this one was matched with.
+// Runs of files whose value stays within tolerance of the run's FIRST member.
+// Anchoring on the first rather than the previous one matters: chaining lets a
+// set drift arbitrarily far, so a thousand files each half a second apart would
+// all end up in one group.
+function clusterBy(files, valueOf, withinTolerance) {
+  const sorted = [...files].sort((a, b) => valueOf(a) - valueOf(b));
+  const sets = [];
+  let run = [];
+  for (const f of sorted) {
+    if (run.length && !withinTolerance(valueOf(run[0]), valueOf(f))) {
+      if (run.length > 1) sets.push(run);
+      run = [];
+    }
+    run.push(f);
+  }
+  if (run.length > 1) sets.push(run);
+  return sets;
+}
+
+// path -> the set it belongs to, for a list of sets.
+function membersOf(sets) {
+  const out = new Map();
+  for (const set of sets) for (const f of set) out.set(f.path, set);
+  return out;
+}
+
+// path -> { identical, close, shape, length, name, group } where group is the
+// tightest set this file was matched with.
 function lbDuplicates(files) {
   const videos = files.filter((f) => f.kind === 'video' || f.kind === 'audio' || f.kind === 'archive');
 
   const identical = groupBy(videos, (f) => (f.sig && f.size ? `${f.size}:${f.sig}` : null));
-  const byLength = groupBy(videos, (f) =>
-    (f.duration && f.duration >= MIN_DUP_DURATION ? Math.round(f.duration) : null));
   const byName = groupBy(videos, (f) => lbNameKey(f.name) || null);
+
+  // Length, then two tighter cuts through the same sets.
+  const lengthSets = clusterBy(
+    videos.filter((f) => f.duration && f.duration >= MIN_DUP_DURATION),
+    (f) => f.duration,
+    (anchor, v) => v - anchor <= LENGTH_TOLERANCE,
+  );
+  const byLength = membersOf(lengthSets);
+
+  // Same length AND a size within a few percent: a re-encode at a similar
+  // quality, or the same download twice. Much harder to hit by accident than
+  // length alone.
+  const bySize = membersOf(lengthSets.flatMap((set) => clusterBy(
+    [...set].sort((a, b) => (a.size || 0) - (b.size || 0)),
+    (f) => f.size || 0,
+    (anchor, v) => anchor > 0 && (v - anchor) / anchor <= SIZE_TOLERANCE,
+  )));
+
+  // Same length AND the same frame size: the same thing remuxed or re-encoded
+  // at the same resolution, where the byte count may differ a lot.
+  const byShape = membersOf(lengthSets.flatMap((set) => {
+    const byDims = new Map();
+    for (const f of set) {
+      if (!f.width || !f.height) continue;
+      const key = `${f.width}x${f.height}`;
+      if (!byDims.has(key)) byDims.set(key, []);
+      byDims.get(key).push(f);
+    }
+    return [...byDims.values()].filter((g) => g.length > 1);
+  }));
 
   const out = new Map();
   // groupBy hands every member of a set the same array, so the array itself is
@@ -270,13 +342,17 @@ function lbDuplicates(files) {
   for (const f of videos) {
     const flags = {
       identical: identical.has(f.path),
+      close: bySize.has(f.path),
+      shape: byShape.has(f.path),
       length: byLength.has(f.path),
       name: byName.has(f.path),
     };
     if (!flags.identical && !flags.length && !flags.name) continue;
 
-    // Strongest signal wins, so a set is grouped by the best evidence it has.
-    const group = identical.get(f.path) || byLength.get(f.path) || byName.get(f.path);
+    // Strongest signal wins, so a set is grouped by the best evidence it has —
+    // and the tighter sets are what you want adjacent when combing through.
+    const group = identical.get(f.path) || bySize.get(f.path) || byShape.get(f.path)
+      || byLength.get(f.path) || byName.get(f.path);
     if (!ids.has(group)) ids.set(group, ++nextId);
 
     const sizes = group.map((x) => x.size || 0);
@@ -304,9 +380,11 @@ function lbIsDuplicate(d) {
 function lbDupeReason(d) {
   if (!d) return '';
   const why = d.identical ? 'identical file'
-    : d.length && d.name ? 'same name and length'
-      : d.length ? 'same length'
-        : d.name ? 'same name' : '';
+    : d.close ? 'same length and size'
+      : d.shape ? 'same length and resolution'
+        : d.length && d.name ? 'same name and length'
+          : d.length ? 'same length'
+            : d.name ? 'same name' : '';
   if (!why) return '';
   // "1 of 3" is the part that tells you whether it is worth opening.
   const n = d.groupCount || 0;
@@ -316,26 +394,43 @@ function lbDupeReason(d) {
 // --- Filters ---
 let lbDupes = new Map();
 
+// Grouped so the chips read as sets rather than one long row. Everything picked
+// is ANDed: "Same length" plus "Below 1080p" means both, not either.
+const dupeOf = (f) => lbDupes.get(f.path) || {};
+
 const FILTERS = [
-  { id: 'all', label: 'All', test: () => true },
-  { id: 'video', label: 'Video', test: (f) => f.kind === 'video' },
-  { id: 'audio', label: 'Audio', test: (f) => f.kind === 'audio' },
-  { id: 'image', label: 'Images', test: (f) => f.kind === 'image' },
-  { id: 'archive', label: 'Archives', test: (f) => f.kind === 'archive' },
-  { id: 'sd', label: 'Below 1080p', test: (f) => f.kind === 'video' && f.height && f.height < 1000 },
-  { id: 'nosubs', label: 'No subtitles', test: (f) => f.kind === 'video' && !f.subTracks && !(f.sidecars || []).length },
-  { id: 'dupes', label: 'Possible duplicates', test: (f) => lbIsDuplicate(lbDupes.get(f.path)) },
-  { id: 'identical', label: 'Identical files', test: (f) => !!(lbDupes.get(f.path) || {}).identical },
-  { id: 'samelen', label: 'Same length', test: (f) => !!(lbDupes.get(f.path) || {}).length },
-  { id: 'samename', label: 'Same filename', test: (f) => !!(lbDupes.get(f.path) || {}).name },
-  { id: 'big', label: 'Over 4 GB', test: (f) => f.size > 4 * 1024 ** 3 },
-  { id: 'bad', label: 'Unreadable', test: (f) => f.unreadable },
+  { group: 'Kind', id: 'video', label: 'Video', test: (f) => f.kind === 'video' },
+  { group: 'Kind', id: 'audio', label: 'Audio', test: (f) => f.kind === 'audio' },
+  { group: 'Kind', id: 'image', label: 'Images', test: (f) => f.kind === 'image' },
+  { group: 'Kind', id: 'archive', label: 'Archives', test: (f) => f.kind === 'archive' },
+
+  { group: 'Duplicates', id: 'dupes', label: 'Any duplicate', test: (f) => lbIsDuplicate(lbDupes.get(f.path)) },
+  { group: 'Duplicates', id: 'identical', label: 'Identical files', test: (f) => !!dupeOf(f).identical },
+  { group: 'Duplicates', id: 'closesize', label: 'Same length & size', test: (f) => !!dupeOf(f).close },
+  { group: 'Duplicates', id: 'sameshape', label: 'Same length & resolution', test: (f) => !!dupeOf(f).shape },
+  { group: 'Duplicates', id: 'samelen', label: 'Same length', test: (f) => !!dupeOf(f).length },
+  { group: 'Duplicates', id: 'samename', label: 'Same filename', test: (f) => !!dupeOf(f).name },
+
+  { group: 'Quality', id: 'sd', label: 'Below 1080p', test: (f) => f.kind === 'video' && f.height && f.height < 1000 },
+  { group: 'Quality', id: 'hd', label: '1080p or better', test: (f) => f.kind === 'video' && f.height && f.height >= 1000 },
+  { group: 'Quality', id: 'vertical', label: 'Vertical', test: (f) => f.width && f.height && f.height > f.width },
+  { group: 'Quality', id: 'nosubs', label: 'No subtitles', test: (f) => f.kind === 'video' && !f.subTracks && !(f.sidecars || []).length },
+  { group: 'Quality', id: 'noaudio', label: 'No audio', test: (f) => f.kind === 'video' && !f.audioTracks },
+
+  { group: 'Size', id: 'big', label: 'Over 4 GB', test: (f) => f.size > 4 * 1024 ** 3 },
+  { group: 'Size', id: 'tiny', label: 'Under 20 MB', test: (f) => f.size > 0 && f.size < 20 * 1024 ** 2 },
+  { group: 'Size', id: 'longone', label: 'Over an hour', test: (f) => f.duration >= 3600 },
+  { group: 'Size', id: 'shortone', label: 'Under 5 min', test: (f) => f.duration > 0 && f.duration < 300 },
+  { group: 'Size', id: 'bad', label: 'Unreadable', test: (f) => f.unreadable },
 ];
 
+const FILTER_BY_ID = new Map(FILTERS.map((f) => [f.id, f]));
+
 function lbVisible() {
-  const filter = FILTERS.find((x) => x.id === lbFilter) || FILTERS[0];
+  const active = [...lbFilters].map((id) => FILTER_BY_ID.get(id)).filter(Boolean);
   const q = lbQuery.toLowerCase();
-  let out = lbFiles.filter((f) => filter.test(f));
+  // Nothing picked means everything; otherwise a file has to satisfy them all.
+  let out = active.length ? lbFiles.filter((f) => active.every((x) => x.test(f))) : lbFiles.slice();
   if (q) {
     out = out.filter((f) =>
       f.name.toLowerCase().includes(q)
@@ -412,7 +507,7 @@ function lbRenderFolders() {
     return;
   }
   const widest = Math.max(...rows.map((f) => f.size));
-  const shown = rows.slice(0, RENDER_CAP);
+  const shown = rows.slice(0, 500);
   lb.folders.innerHTML = shown.map((f) => lbFolderRowHtml(f, widest)).join('')
     + (rows.length > shown.length
       ? `<div class="lb-empty">Showing ${fmtNumber(shown.length)} of ${fmtNumber(rows.length)} — narrow the search to see the rest.</div>`
@@ -465,13 +560,44 @@ function lbRenderStats() {
 }
 
 function lbRenderFilters() {
-  lb.filters.innerHTML = FILTERS.map((f) => {
-    const n = lbFiles.filter(f.test).length;
-    if (!n && f.id !== 'all') return '';
-    return `<button class="lb-chip${f.id === lbFilter ? ' active' : ''}" type="button" data-filter="${esc(f.id)}">
-      ${esc(f.label)} <span class="lb-chip-n">${fmtNumber(n)}</span></button>`;
-  }).join('');
+  // Counts are for what each chip would leave given the OTHER chips already on,
+  // so they say what clicking it does rather than what it would do alone.
+  const others = (id) => [...lbFilters].filter((x) => x !== id)
+    .map((x) => FILTER_BY_ID.get(x)).filter(Boolean);
+
+  const countFor = (f) => {
+    const rest = others(f.id);
+    return lbFiles.filter((file) => f.test(file) && rest.every((x) => x.test(file))).length;
+  };
+
+  const groups = [];
+  for (const f of FILTERS) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === f.group) last.items.push(f);
+    else groups.push({ name: f.group, items: [f] });
+  }
+
+  const allActive = lbFilters.size === 0;
+  let html = `<div class="lb-filter-row">
+    <span class="lb-filter-label">Show</span>
+    <button class="lb-chip${allActive ? ' active' : ''}" type="button" data-filter="all">All <span class="lb-chip-n">${fmtNumber(lbFiles.length)}</span></button>
+    ${lbFilters.size ? `<span class="lb-filter-note">${fmtNumber(lbVisible().length)} match all ${lbFilters.size} filter${lbFilters.size === 1 ? '' : 's'}</span>` : ''}
+  </div>`;
+
+  for (const g of groups) {
+    const chips = g.items.map((f) => {
+      const n = countFor(f);
+      const on = lbFilters.has(f.id);
+      if (!n && !on) return '';
+      return `<button class="lb-chip${on ? ' active' : ''}" type="button" data-filter="${esc(f.id)}">${esc(f.label)} <span class="lb-chip-n">${fmtNumber(n)}</span></button>`;
+    }).filter(Boolean).join('');
+    if (!chips) continue;
+    html += `<div class="lb-filter-row"><span class="lb-filter-label">${esc(g.name)}</span>${chips}</div>`;
+  }
+
+  lb.filters.innerHTML = html;
 }
+
 
 function lbRowHtml(f) {
   const dupe = lbDupes.get(f.path);
@@ -525,6 +651,47 @@ function lbRowHtml(f) {
   </div>`;
 }
 
+function lbMoreHtml(shown, total) {
+  if (shown >= total) {
+    return `<div class="lb-empty">All ${fmtNumber(total)} shown.</div>`;
+  }
+  return `<div class="lb-more" id="lb-more">
+    <button class="btn-ghost" type="button" data-more>Show ${fmtNumber(Math.min(RENDER_CHUNK, total - shown))} more</button>
+    <span class="lb-more-note">${fmtNumber(shown)} of ${fmtNumber(total)}</span>
+  </div>`;
+}
+
+// Loads the next chunk when the sentinel scrolls into view, so scrolling just
+// keeps working. The button stays as the fallback and as a progress readout.
+function lbWatchMore(total) {
+  if (lbMoreObserver) { lbMoreObserver.disconnect(); lbMoreObserver = null; }
+  const sentinel = lb.list.querySelector('#lb-more');
+  if (!sentinel || typeof IntersectionObserver !== 'function') return;
+
+  lbMoreObserver = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting) && lbShown < total) lbShowMore();
+  }, { rootMargin: '600px' });
+  lbMoreObserver.observe(sentinel);
+}
+
+// Appends rather than re-rendering: replacing innerHTML on a list you are
+// halfway down throws away the scroll position you were reading from.
+function lbShowMore() {
+  const rows = lbVisible();
+  const next = rows.slice(lbShown, lbShown + RENDER_CHUNK);
+  if (!next.length) return;
+
+  const sentinel = lb.list.querySelector('#lb-more');
+  const html = next.map(lbRowHtml).join('');
+  if (sentinel) sentinel.insertAdjacentHTML('beforebegin', html);
+  else lb.list.insertAdjacentHTML('beforeend', html);
+
+  lbShown += next.length;
+  const tail = lb.list.querySelector('#lb-more');
+  if (tail) tail.outerHTML = lbMoreHtml(lbShown, rows.length);
+  lbWatchMore(rows.length);
+}
+
 function lbRenderList() {
   const rows = lbVisible();
   if (!lbFiles.length) { lb.list.innerHTML = ''; return; }
@@ -532,12 +699,12 @@ function lbRenderList() {
     lb.list.innerHTML = '<div class="lb-empty">Nothing matches that.</div>';
     return;
   }
-  const shown = rows.slice(0, RENDER_CAP);
-  lb.list.innerHTML = shown.map(lbRowHtml).join('')
-    + (rows.length > shown.length
-      ? `<div class="lb-empty">Showing ${fmtNumber(shown.length)} of ${fmtNumber(rows.length)} — narrow the search to see the rest.</div>`
-      : '');
+  lbShown = Math.min(Math.max(RENDER_CHUNK, lbShown), rows.length);
+  lb.list.innerHTML = rows.slice(0, lbShown).map(lbRowHtml).join('')
+    + lbMoreHtml(lbShown, rows.length);
+  lbWatchMore(rows.length);
 }
+
 
 // Deleted files stay listed until dismissed, so an accident is one click to
 // undo rather than a trip through the Recycle Bin looking for the right name.
@@ -775,10 +942,16 @@ function bindLibrary() {
 
   lb.search.addEventListener('input', debounce(() => {
     lbQuery = lb.search.value.trim();
+    lbShown = RENDER_CHUNK;
+    lbRenderFilters();
     lbRenderList();
   }, 120));
 
-  lb.sort.addEventListener('change', () => { lbSort = lb.sort.value; lbRenderList(); });
+  lb.sort.addEventListener('change', () => {
+    lbSort = lb.sort.value;
+    lbShown = RENDER_CHUNK;
+    lbRenderList();
+  });
 
   lb.images.addEventListener('change', () => { lbImages = lb.images.checked; lbSavePrefs(); });
 
@@ -823,7 +996,8 @@ function bindLibrary() {
     if (!open) return;
     lb.search.value = open.dataset.fdOpen;
     lbQuery = open.dataset.fdOpen;
-    lbFilter = 'all';
+    lbFilters.clear();
+    lbShown = RENDER_CHUNK;
     lbRenderFilters();
     lbShowView('files');
   });
@@ -831,12 +1005,18 @@ function bindLibrary() {
   lb.filters.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-filter]');
     if (!chip) return;
-    lbFilter = chip.dataset.filter;
+    const id = chip.dataset.filter;
+    if (id === 'all') lbFilters.clear();
+    else if (lbFilters.has(id)) lbFilters.delete(id);
+    else lbFilters.add(id);
+    lbShown = RENDER_CHUNK;
     lbRenderFilters();
     lbRenderList();
   });
 
   lb.list.addEventListener('click', (e) => {
+    if (e.target.closest('[data-more]')) { lbShowMore(); return; }
+
     const del = e.target.closest('[data-delete]');
     if (del) {
       const path = del.dataset.delete;

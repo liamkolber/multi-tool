@@ -12,6 +12,10 @@ const grab = (re, what) => {
 
 const api = new Function(`
   ${grab(/const MIN_DUP_DURATION = \d+;/, 'MIN_DUP_DURATION')}
+  ${grab(/const LENGTH_TOLERANCE = [\d.]+;/, 'LENGTH_TOLERANCE')}
+  ${grab(/const SIZE_TOLERANCE = [\d.]+;/, 'SIZE_TOLERANCE')}
+  ${grab(/function clusterBy\(files, valueOf, withinTolerance\) \{[\s\S]*?\n\}/, 'clusterBy')}
+  ${grab(/function membersOf\(sets\) \{[\s\S]*?\n\}/, 'membersOf')}
   ${grab(/function lbNameKey\(name\) \{[\s\S]*?\n\}/, 'lbNameKey')}
   ${grab(/function groupBy\(files, keyOf\) \{[\s\S]*?\n\}/, 'groupBy')}
   ${grab(/function lbDuplicates\(files\) \{[\s\S]*?\n\}/, 'lbDuplicates')}
@@ -23,8 +27,8 @@ const api = new Function(`
 const { lbDuplicates, lbIsDuplicate, lbDupeReason } = api;
 
 // Distinct folders, because two files cannot share a name in one.
-const v = (dir, name, size, duration, sig = null) =>
-  ({ path: `X:\\${dir}\\${name}`, dir: `X:\\${dir}`, name, kind: 'video', size, duration, sig });
+const v = (dir, name, size, duration, sig = null, width = null, height = null) =>
+  ({ path: `X:\\${dir}\\${name}`, dir: `X:\\${dir}`, name, kind: 'video', size, duration, sig, width, height });
 
 let pass = 0;
 let fail = 0;
@@ -127,6 +131,45 @@ const sameSigDiffSize = lbDuplicates([
 ]);
 check('same sig but different size is not identical',
   !sameSigDiffSize.get('X:\\a\\x.mkv').identical);
+
+console.log('\n--- length matching is a tolerance, not a rounding ---');
+// Rounding to the nearest second put 1999.6 and 2000.4 in different buckets
+// while 2000.4 and 2000.6 shared one. A tolerance does neither.
+const drift = lbDuplicates([
+  v('a', 'one.mkv', 500, 1999.98),
+  v('b', 'two.mkv', 900, 2000.31),   // 0.33s apart — the same cut, re-encoded
+  v('c', 'far.mkv', 700, 2003.00),   // 3s apart — a different video
+]);
+check('a third of a second apart is one set',
+  !!drift.get('X:\\a\\one.mkv') && !!drift.get('X:\\b\\two.mkv'));
+check('three seconds apart is not', !drift.get('X:\\c\\far.mkv'));
+
+console.log('\n--- a set cannot chain its way across the library ---');
+// Each file is within tolerance of the previous one but far from the first.
+// Anchoring on the run's first member is what stops one set swallowing them all.
+const chain = lbDuplicates(Array.from({ length: 40 }, (_, i) =>
+  v(`d${i}`, `c${i}.mkv`, 100 + i, 600 + i * 0.4)));
+const sets = new Set([...chain.values()].map((x) => x.groupId));
+check('40 files drifting 0.4s apart do not become one set', sets.size > 1,
+  `${sets.size} sets`);
+
+console.log('\n--- the tighter cuts through a length set ---');
+const cut = lbDuplicates([
+  v('a', 'big.mkv', 1_000_000, 1200, null, 1920, 1080),
+  v('b', 'similar.mkv', 1_060_000, 1200.2, null, 1920, 1080),  // +6% size, same dims
+  v('c', 'smaller.mp4', 300_000, 1200.1, null, 640, 480),      // same length only
+]);
+const A = cut.get('X:\\a\\big.mkv');
+const C = cut.get('X:\\c\\smaller.mp4');
+check('similar size within a length set reads as "close"', A.close === true);
+check('same resolution within a length set reads as "shape"', A.shape === true);
+check('a wildly different size does not', C.close !== true, `close=${C.close}`);
+check('nor a different resolution', C.shape !== true, `shape=${C.shape}`);
+check('but it is still a length match', C.length === true);
+check('and the reason names the tightest signal',
+  lbDupeReason(A).startsWith('same length and size'), lbDupeReason(A));
+check('while the loose one says only what it knows',
+  lbDupeReason(C).startsWith('same length'), lbDupeReason(C));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

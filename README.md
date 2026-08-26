@@ -245,6 +245,22 @@ one ends and the next begins is obvious. Each row says which set it belongs to
 ("same length · 1 of 4"), and the **Reclaimable** figure is what deleting all
 but the largest copy of every set would free, counted once per set.
 
+### Filters
+
+Filters combine. Picking several ANDs them, so **Same length & size** plus
+**Over 4 GB** is the duplicates actually worth reclaiming rather than either
+list on its own. **All** clears the selection. Each chip's count is what it
+would leave *given the other chips already on*, so it says what clicking it does
+rather than what it would do alone.
+
+They are grouped by kind, duplicates, quality and size. Beyond the duplicate
+signals there are vertical video, files with no audio track, under 20 MB, over
+an hour, under five minutes, and the quality and subtitle filters.
+
+Rows load a chunk at a time as you reach the end of the list. A fixed cap meant
+a thousand duplicates you could never scroll to, and rendering all of them up
+front means tens of thousands of DOM nodes before you have looked at one.
+
 ### Deleting
 
 **Delete** moves the file to the **Recycle Bin**. Never straight off the disk —
@@ -302,7 +318,9 @@ row says which one matched it.
 | Signal | Means | Certainty |
 | --- | --- | --- |
 | **identical file** | Same byte count *and* the same hash of the first and last 64 KB | Effectively certain |
-| **same length** | Same running time to the second, for anything over 30 seconds | Strong — catches a re-encode |
+| **same length and size** | Same running time, and sizes within 12% of each other | Very strong |
+| **same length and resolution** | Same running time and the same frame size | Strong |
+| **same length** | Same running time, within half a second, over 30 seconds | Weakest — many files share a length |
 | **same name** | The same filename, exactly, in two different folders | Strong |
 
 The first is what catches *the same video under a completely different name*: a
@@ -312,10 +330,23 @@ almost nothing even on a large library. Two different videos that happen to
 share a byte count will differ in their container header or index, so the hash
 separates them.
 
-The second catches the same content **re-encoded, resized or remuxed**, where
-the bytes are entirely different but the running time is not. The 30-second
-floor is there because two clips both eight seconds long are not evidence of
-anything.
+The middle three are all cuts through the same idea — the same content
+**re-encoded, resized or remuxed**, where the bytes differ entirely but the
+running time does not. The 30-second floor is there because two clips both eight
+seconds long are not evidence of anything.
+
+Running times are compared **within half a second**, not rounded to the nearest
+one. Rounding put every 33-minute video in the same bucket, which across a few
+thousand files is hundreds of unrelated collisions; a re-encode of the same
+source lands within a frame or two of its original, so the tolerance can be that
+tight without losing the case the signal exists for. Sets are anchored on their
+first member rather than chained from the previous one, or forty files drifting
+half a second apart would all end up in one group.
+
+On top of that, **same length and size** (within 12%) and **same length and
+resolution** narrow a length set to the members that agree on something else as
+well. Those are the two filters worth reaching for first — plain "same length"
+is the loose one.
 
 The third is an exact filename match, case-insensitive. Two files cannot share
 a name within one folder, so this always means copies sitting in different
