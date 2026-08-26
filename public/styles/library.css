@@ -156,14 +156,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Two parts, so a long folder name truncates rather than pushing the size and
+   codec off the end of the row. */
 .lb-row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   color: var(--text-dim);
   font-size: 12.5px;
   margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.lb-row-facts { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; }
+.lb-sep { flex: 0 0 auto; }
+
+.lb-row-folder {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-align: left;
 }
+.lb-row-folder:hover { color: var(--accent-hover); text-decoration: underline; }
+
+/* The folders view reuses .lb-row-meta but wants it plain. */
+.lb-fd-row .lb-row-meta { display: block; text-overflow: ellipsis; }
 
 .lb-row-acts { display: flex; gap: 6px; flex: 0 0 auto; }
 .lb-act {
@@ -202,6 +229,52 @@
   margin: 6px 0 5px;
 }
 .lb-fd-fill { background: var(--accent); height: 100%; }
+
+/* --- Undo strip --- */
+.lb-trash {
+  border: 1px solid #6b5a2a;
+  background: #221d12;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.lb-trash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.lb-trash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.lb-trash-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-trash-meta {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lb-danger:hover { color: #e07070; border-color: #6b2f2f; }
+.lb-act.armed {
+  color: #fff;
+  background: #8c2f2f;
+  border-color: #b04545;
+}
 
 .lb-empty {
   color: var(--text-dim);

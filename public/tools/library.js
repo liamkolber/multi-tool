@@ -26,6 +26,8 @@ const TEMPLATE = `
 
   <div id="lb-stats" class="lb-stats" hidden></div>
 
+  <div id="lb-trash" class="lb-trash" hidden></div>
+
   <div id="lb-views" class="lb-views" hidden>
     <button class="lb-chip active" type="button" data-view="files">Files</button>
     <button class="lb-chip" type="button" data-view="folders">Folders</button>
@@ -39,6 +41,7 @@ const TEMPLATE = `
       <option value="size">Largest first</option>
       <option value="duration">Longest first</option>
       <option value="height">Highest resolution</option>
+      <option value="dir">Folder</option>
       <option value="mtime">Newest first</option>
     </select>
     <div id="lb-filters" class="lb-filters"></div>
@@ -78,6 +81,7 @@ function cacheEls() {
     filters: $('lb-filters'),
     list: $('lb-list'),
     views: $('lb-views'),
+    trash: $('lb-trash'),
     fdControls: $('lb-fd-controls'),
     fdSearch: $('lb-fd-search'),
     fdSort: $('lb-fd-sort'),
@@ -88,6 +92,7 @@ function cacheEls() {
 
 let lbFiles = [];
 let lbFolders = [];
+let lbTrash = [];
 let lbView = 'files';
 let lbFdQuery = '';
 let lbFdSort = 'size';
@@ -147,6 +152,14 @@ function lbResLabel(f) {
   if (h >= 700) return '720p';
   if (h >= 500) return '576p';
   return `${h}p`;
+}
+
+function lbRelDir(f) {
+  if (!lbRoot || !f.dir) return '';
+  // Both come out of the same scan, so a length slice is safe — no need to
+  // reconcile separators or drive-letter case between them.
+  if (f.dir.length <= lbRoot.length) return '';
+  return f.dir.slice(lbRoot.length).replace(/^[\\/]+/, '');
 }
 
 function lbShowError(msg) {
@@ -301,6 +314,8 @@ function lbVisible() {
   const dir = lbSort === 'name' ? 1 : -1;
   return out.sort((a, b) => {
     if (lbSort === 'name') return a.name.localeCompare(b.name);
+    // Within a folder, by name — otherwise the grouping is there but unordered.
+    if (lbSort === 'dir') return a.dir.localeCompare(b.dir) || a.name.localeCompare(b.name);
     return ((a[lbSort] || 0) - (b[lbSort] || 0)) * dir;
   });
 }
@@ -411,6 +426,14 @@ function lbRowHtml(f) {
     subs ? `CC ${subs}` : '',
   ].filter(Boolean);
 
+  // Clicking the folder filters the list to it, which is the usual next move
+  // after spotting a duplicate — you want to see what else lives there.
+  const relDir = lbRelDir(f);
+  const folder = relDir
+    ? `<button class="lb-row-folder" type="button" data-folder="${esc(relDir)}"
+        title="Show everything in ${esc(relDir)}">${esc(relDir)}</button><span class="lb-sep">·</span>`
+    : '';
+
   // loading="lazy" is what makes this affordable on a library of thousands —
   // the browser only asks for the handful actually on screen, and each request
   // is what triggers the server to render that frame.
@@ -424,14 +447,16 @@ function lbRowHtml(f) {
     ${thumb}
     <div class="lb-row-main">
       <div class="lb-row-name" title="${esc(f.path)}">${esc(f.name)}</div>
-      <div class="lb-row-meta">${bits.map(esc).join(' · ')}${
-        reason ? ` · <span class="lb-dupe-why">${esc(reason)}</span>` : ''}</div>
+      <div class="lb-row-meta">${folder}<span class="lb-row-facts">${bits.map(esc).join(' · ')}${
+        reason ? ` · <span class="lb-dupe-why">${esc(reason)}</span>` : ''}</span></div>
     </div>
     <div class="lb-row-acts">
       <button class="lb-act" type="button" data-open="${esc(f.path)}" title="Open with the default app">Open</button>
       ${f.kind === 'video' || f.kind === 'audio' || f.kind === 'image'
         ? `<button class="lb-act" type="button" data-convert="${esc(f.path)}" title="Open in Converter">Convert</button>` : ''}
       <button class="lb-act" type="button" data-reveal="${esc(f.path)}" title="Show in Explorer">Reveal</button>
+      <button class="lb-act lb-danger" type="button" data-delete="${esc(f.path)}"
+        title="Move to the Recycle Bin">Delete</button>
     </div>
   </div>`;
 }
@@ -450,9 +475,52 @@ function lbRenderList() {
       : '');
 }
 
+// Deleted files stay listed until dismissed, so an accident is one click to
+// undo rather than a trip through the Recycle Bin looking for the right name.
+function lbRenderTrash() {
+  if (!lbTrash.length) { lb.trash.hidden = true; lb.trash.innerHTML = ''; return; }
+  lb.trash.hidden = false;
+
+  const rows = [...lbTrash].reverse().slice(0, 20).map((f) => `
+    <div class="lb-trash-row">
+      <span class="lb-trash-name" title="${esc(f.path)}">${esc(f.name)}</span>
+      <span class="lb-trash-meta">${esc(lbBytes(f.size))}</span>
+      <button class="lb-act" type="button" data-restore="${esc(f.path)}">Restore</button>
+    </div>`).join('');
+
+  lb.trash.innerHTML = `
+    <div class="lb-trash-head">
+      <span>${fmtNumber(lbTrash.length)} file${lbTrash.length === 1 ? '' : 's'} moved to the Recycle Bin${
+        lbTrash.length > 20 ? ' — showing the last 20' : ''}</span>
+      <button class="lb-act" type="button" data-trash-dismiss>Dismiss</button>
+    </div>
+    ${rows}`;
+}
+
+async function lbRestore(path) {
+  try {
+    const res = await fetch(`/api/library/restore?path=${encodeURIComponent(path)}`, { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') { lbShowError(json.status_message || 'Could not restore that file.'); return; }
+    lbClearError();
+    await lbLoadIndex();
+  } catch {
+    lbShowError('Could not reach the server.');
+  }
+}
+
+async function lbDismissTrash() {
+  try {
+    await fetch('/api/library/trash', { method: 'POST' });
+    lbTrash = [];
+    lbRenderTrash();
+  } catch { /* ignore */ }
+}
+
 function lbRenderAll() {
   lbDupes = lbDuplicates(lbFiles);
   lb.views.hidden = lbFiles.length === 0 && lbFolders.length === 0;
+  lbRenderTrash();
   lbRenderStats();
   lbRenderFilters();
   lbShowView(lbView);
@@ -487,6 +555,7 @@ async function lbLoadIndex() {
     if (json.status === 'ok') {
       lbFiles = json.data.files || [];
       lbFolders = json.data.folders || [];
+      lbTrash = json.data.trash || [];
       lbRoot = json.data.root;
       if (lbRoot) lb.root.value = lbRoot;
       lbRenderAll();
@@ -537,6 +606,48 @@ async function lbOpen(path) {
     const json = await res.json();
     if (json.status !== 'ok') lbShowError(json.status_message || 'Could not open that.');
     else lbClearError();
+  } catch {
+    lbShowError('Could not reach the server.');
+  }
+}
+
+// Two-step rather than a dialog: the second click within a few seconds is the
+// confirmation. Deleting duplicates means working down a list, and a modal per
+// row would make that miserable — but an unguarded button sitting next to a
+// heuristic would be worse.
+let lbArmed = null;
+let lbArmTimer = null;
+
+function lbDisarm() {
+  clearTimeout(lbArmTimer);
+  lbArmed = null;
+  lb.list.querySelectorAll('[data-delete].armed').forEach((b) => {
+    b.classList.remove('armed');
+    b.textContent = 'Delete';
+  });
+}
+
+function lbArmDelete(btn, path) {
+  lbDisarm();
+  lbArmed = path;
+  btn.classList.add('armed');
+  btn.textContent = 'Delete?';
+  lbArmTimer = setTimeout(lbDisarm, 4000);
+}
+
+async function lbDelete(path) {
+  lbDisarm();
+  try {
+    const res = await fetch(`/api/library/delete?path=${encodeURIComponent(path)}`, { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') {
+      lbShowError(json.status_message || 'Could not delete that file.');
+      return;
+    }
+    lbClearError();
+    // The server has already dropped it from its index and adjusted the folder
+    // totals, so refetching is both correct and cheaper than mirroring it here.
+    await lbLoadIndex();
   } catch {
     lbShowError('Could not reach the server.');
   }
@@ -608,6 +719,12 @@ function bindLibrary() {
     lbRenderList();
   });
 
+  lb.trash.addEventListener('click', (e) => {
+    if (e.target.closest('[data-trash-dismiss]')) { lbDismissTrash(); return; }
+    const restore = e.target.closest('[data-restore]');
+    if (restore) lbRestore(restore.dataset.restore);
+  });
+
   lb.views.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-view]');
     if (btn) lbShowView(btn.dataset.view);
@@ -644,6 +761,23 @@ function bindLibrary() {
   });
 
   lb.list.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-delete]');
+    if (del) {
+      const path = del.dataset.delete;
+      if (lbArmed === path) lbDelete(path);
+      else lbArmDelete(del, path);
+      return;
+    }
+    // Any other click in the list cancels a pending confirmation.
+    if (lbArmed) lbDisarm();
+
+    const folder = e.target.closest('[data-folder]');
+    if (folder) {
+      lb.search.value = folder.dataset.folder;
+      lbQuery = folder.dataset.folder;
+      lbRenderList();
+      return;
+    }
     const open = e.target.closest('[data-open]');
     if (open) { lbOpen(open.dataset.open); return; }
     const reveal = e.target.closest('[data-reveal]');

@@ -231,9 +231,36 @@ What it surfaces:
   never handed to ffmpeg, since there is nothing in one for it to read
 - **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)
 
-Every row offers **Open** (hands the file to whatever Windows opens it with,
-exactly as a double-click would), **Reveal** (shows it in Explorer) and, for
-media, **Convert** (hands it to the Converter).
+Every row shows the folder it lives in, relative to the scanned root — click it
+to filter the list to that folder — and offers **Open** (hands the file to
+whatever Windows opens it with, exactly as a double-click would), **Reveal**
+(shows it in Explorer), **Delete**, and for media **Convert** (hands it to the
+Converter). Sorting by **Folder** groups everything by location, which is the
+useful order when working through duplicates.
+
+### Deleting
+
+**Delete** moves the file to the **Recycle Bin**. Never straight off the disk —
+this button sits next to duplicate detection that is explicitly heuristic, and
+"same length" is a strong hint rather than proof, so getting it wrong has to be
+survivable. On Windows that means `Microsoft.VisualBasic.FileIO.FileSystem`,
+which is the only route that genuinely recycles rather than unlinking.
+
+It takes two clicks: the first arms the button, the second within four seconds
+does it. A dialog per row would make working down a list of duplicates
+miserable; an unguarded button would be worse.
+
+Deleted files stay listed in a strip above the results with a **Restore** button
+for each, so an accident is one click to undo rather than a hunt through the
+Recycle Bin for the right name. The last 50 stay undoable, and the list survives
+a restart. **Dismiss** clears the list without restoring anything — the files
+remain in the Recycle Bin regardless.
+
+Folders are deliberately not deletable. Removing one file at a time is a mistake
+you can undo; removing a tree is a different kind of afternoon.
+
+Folder totals and the file index are adjusted as files come and go, so nothing
+needs rescanning after a delete or a restore.
 
 ### Folders
 
