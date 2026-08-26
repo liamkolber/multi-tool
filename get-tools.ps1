@@ -35,7 +35,10 @@ try {
 
 # --- ffmpeg: shipped as a zip; we only want ffmpeg.exe out of it ---
 $ffmpeg = Join-Path $BinDir 'ffmpeg.exe'
-if (Test-Path $ffmpeg) {
+$ffprobe = Join-Path $BinDir 'ffprobe.exe'
+# Both come out of one download, so a missing ffprobe is reason enough to fetch
+# the archive again even when ffmpeg is already sitting there.
+if ((Test-Path $ffmpeg) -and (Test-Path $ffprobe)) {
     Write-Host "  ffmpeg  already present, skipping" -ForegroundColor DarkGray
 } else {
     $zip = Join-Path $env:TEMP 'ffmpeg-essentials.zip'
@@ -50,6 +53,13 @@ if (Test-Path $ffmpeg) {
             Write-Host "  ffmpeg  OK" -ForegroundColor Green
         } else {
             Write-Host "  ffmpeg  FAILED - ffmpeg.exe not found in the archive" -ForegroundColor Red
+        }
+        # ffprobe ships in the same archive; the Converter uses it to read a
+        # file's streams as JSON instead of scraping ffmpeg's stderr.
+        $probeFound = Get-ChildItem -Path $tmp -Filter 'ffprobe.exe' -Recurse | Select-Object -First 1
+        if ($probeFound) {
+            Copy-Item $probeFound.FullName (Join-Path $BinDir 'ffprobe.exe') -Force
+            Write-Host "  ffprobe OK" -ForegroundColor Green
         }
     } catch {
         Write-Host "  ffmpeg  FAILED - $($_.Exception.Message)" -ForegroundColor Red

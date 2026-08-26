@@ -10,12 +10,13 @@ import { PORT, HOST, sendJson, handleStatic } from './lib/core.mjs';
 
 import { tool as media } from './lib/tools/media.mjs';
 import { tool as downloader } from './lib/tools/downloader.mjs';
+import { tool as convert } from './lib/tools/convert.mjs';
 import { tool as reddit } from './lib/tools/reddit.mjs';
 
 export const APP_NAME = "Liam's Multi-Tool";
 
 // Longest prefix first, so '/api/reddit/' wins over the media tool's '/api/'.
-const TOOLS = [media, downloader, reddit].sort((a, b) => b.prefix.length - a.prefix.length);
+const TOOLS = [media, downloader, convert, reddit].sort((a, b) => b.prefix.length - a.prefix.length);
 
 // What the launcher screen renders. Kept deliberately small — the client owns
 // the UI, the server just says which tools exist.

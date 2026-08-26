@@ -171,6 +171,36 @@ Notes:
   somewhere; after that the remembered location wins. Delete `.dl-config.json`
   to forget it.
 
+## 🎛️ Converter
+
+A front end for the `ffmpeg` the Downloader already ships. Pick a file (or paste
+a path), and only the operations that suit what it actually is are offered — a
+JPEG is never asked for its audio track.
+
+| Input | Operations |
+| --- | --- |
+| Video | Convert · Extract audio · Trim · Compress to size · Resize · Make GIF · Remove audio |
+| Audio | Convert/extract · Trim |
+| Image | Convert · Resize |
+
+Notes on the ones with a catch:
+
+- **Convert** defaults to *Remux* — a stream copy, so it is instant and lossless.
+  It only works when the existing codecs are legal in the target container, so
+  asking for WebM always re-encodes (it takes neither H.264 nor AAC).
+- **Trim** in fast mode cuts on keyframes, so the start can land up to a second
+  early. Exact mode re-encodes and is slow but frame-accurate.
+- **Compress** is single-pass at a computed bitrate. It lands close to the target
+  rather than exactly on it; two-pass would be more accurate and twice as slow.
+- **Resize** rounds the width to an even number, which H.264 requires.
+
+Progress is streamed over SSE the same way downloads are, and the queue keeps
+failed and cancelled jobs with a **Retry** that replays the exact settings.
+
+`ffprobe` is used to read a file's streams when present, falling back to parsing
+`ffmpeg -i` when it isn't. Run `npm run get-tools` to add it — it comes out of
+the same archive as ffmpeg, so it costs nothing extra.
+
 ## 👽 Reddit
 
 Signs into **your own** Reddit account through the official OAuth API and shows
@@ -233,6 +263,7 @@ Override the redirect URI with `REDDIT_REDIRECT_URI` if you run on another port.
 ```
 browser  ──►  server.mjs  ──►  lib/tools/media.mjs       ──►  YTS / AniList / Jikan
               (router)    ──►  lib/tools/downloader.mjs  ──►  yt-dlp
+                          ──►  lib/tools/convert.mjs     ──►  ffmpeg
                           ──►  lib/tools/reddit.mjs      ──►  oauth.reddit.com
 ```
 

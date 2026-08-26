@@ -1,13 +1,16 @@
-# Native "Save as" / folder picker for the Download tab.
+# Native file dialogs, shared by every tool that needs one.
 #
 # Every input arrives as an environment variable, never as a command-line
 # argument, so a video title can't be interpolated into anything executable:
 #
-#   DL_PICK_MODE  file | folder
-#   DL_PICK_DIR   directory to open in
-#   DL_PICK_NAME  suggested file name, extension included (file mode)
+#   DL_PICK_MODE    file | folder | open
+#   DL_PICK_DIR     directory to open in
+#   DL_PICK_NAME    suggested file name, extension included (file mode)
+#   DL_PICK_FILTER  dialog filter string (open mode); defaults to all files
+#   DL_PICK_MULTI   '1' to allow selecting several files (open mode)
 #
 # Writes the chosen path to stdout and exits 0; exits 1 if the user cancels.
+# In open+multi mode one path is written per line.
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
@@ -36,7 +39,22 @@ $owner.Activate()
 
 $chosen = $null
 
-if ($env:DL_PICK_MODE -eq 'folder') {
+if ($env:DL_PICK_MODE -eq 'open') {
+    # Choosing an existing file to work on, rather than a destination.
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = 'Choose a file'
+    $dlg.CheckFileExists = $true
+    $dlg.Multiselect = ($env:DL_PICK_MULTI -eq '1')
+    $dlg.Filter = if ($env:DL_PICK_FILTER) { $env:DL_PICK_FILTER } else { 'All files (*.*)|*.*' }
+    if ($env:DL_PICK_DIR -and (Test-Path $env:DL_PICK_DIR)) { $dlg.InitialDirectory = $env:DL_PICK_DIR }
+
+    $result = $dlg.ShowDialog($owner)
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+        # Multiselect returns every chosen path; single select still populates
+        # FileNames with the one, so this covers both.
+        $chosen = ($dlg.FileNames -join [Environment]::NewLine)
+    }
+} elseif ($env:DL_PICK_MODE -eq 'folder') {
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
     $dlg.Description = 'Choose where to save the downloads'
     if ($env:DL_PICK_DIR -and (Test-Path $env:DL_PICK_DIR)) { $dlg.SelectedPath = $env:DL_PICK_DIR }

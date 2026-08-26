@@ -1,0 +1,170 @@
+/* Converter: file card, operation cards, conversion queue. */
+
+.cv-notice {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin-bottom: 18px;
+}
+.cv-notice strong { color: var(--text); font-weight: 600; }
+.cv-notice.warn { border-color: #6b5a2a; background: #221d12; }
+.cv-notice.error { border-color: #6b2f2f; background: #241416; }
+.cv-notice code {
+  background: var(--surface-3);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* --- Pick bar --- */
+.cv-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+.cv-or { color: var(--text-dim); font-size: 13px; flex: 0 0 auto; }
+.cv-bar input {
+  flex: 1;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 13px;
+  outline: none;
+}
+.cv-bar input:focus { border-color: var(--accent); }
+
+/* --- The loaded file --- */
+.cv-file {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.cv-file-icon { font-size: 30px; line-height: 1; flex: 0 0 auto; }
+.cv-file-main { min-width: 0; }
+.cv-file-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv-file-meta { color: var(--text-dim); font-size: 13px; margin-top: 3px; }
+
+/* --- Operation cards --- */
+.cv-ops { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+
+.cv-op {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.cv-op-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.cv-op-label { font-size: 15px; font-weight: 600; }
+.cv-run { padding: 8px 20px; font-size: 14px; }
+
+.cv-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.cv-field { display: flex; flex-direction: column; gap: 5px; }
+.cv-field[hidden] { display: none; }
+.cv-field-label { color: var(--text-dim); font-size: 12.5px; }
+.cv-field-control { display: flex; align-items: center; gap: 7px; }
+.cv-suffix { color: var(--text-dim); font-size: 12.5px; }
+
+.cv-field select,
+.cv-field input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 10px;
+  outline: none;
+}
+.cv-field input { width: 120px; }
+.cv-field select:focus,
+.cv-field input:focus { border-color: var(--accent); }
+
+/* --- Queue --- */
+.cv-jobs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.cv-h2 { font-size: 16px; margin: 0; }
+.cv-jobs { display: flex; flex-direction: column; gap: 10px; }
+
+.cv-job {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 13px 16px;
+}
+.cv-job.done { border-color: #2f5c3a; }
+.cv-job.error { border-color: #6b2f2f; }
+.cv-job.cancelled { opacity: 0.75; }
+
+.cv-job-main { min-width: 0; flex: 1; }
+.cv-job-top { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; }
+.cv-job-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv-job-state {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+.cv-job.done .cv-job-state { color: #6fbf85; }
+.cv-job.error .cv-job-state { color: #e07070; }
+
+.cv-track { background: var(--surface-3); border-radius: 999px; height: 6px; overflow: hidden; }
+.cv-fill { background: var(--accent); height: 100%; transition: width 0.2s ease; }
+.cv-job.done .cv-fill { background: #4e9d68; }
+.cv-job.error .cv-fill { background: #a34a4a; }
+
+.cv-job-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+  min-height: 20px;
+}
+.cv-job-meta {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv-job.error .cv-job-meta { color: #e07070; }
+.cv-job-acts { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.cv-job.error .cv-retry, .cv-job.cancelled .cv-retry { color: var(--text); border-color: var(--text-dim); }
+
+/* An image conversion has no duration to measure, so the bar pulses instead of
+   pretending to track progress. */
+@keyframes cv-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+.cv-job.picking .cv-fill,
+.cv-job.running .cv-fill { animation: cv-pulse 1.4s ease-in-out infinite; }
+.cv-job.running .cv-fill { animation: none; }
+.cv-job.picking .cv-job-state { color: var(--accent); }

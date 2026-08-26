@@ -3,7 +3,7 @@
 // The server owns the yt-dlp process; this side probes a URL, starts a job, and
 // renders whatever the /api/dl/events stream reports back.
 
-import { $, esc, debounce } from '../lib/dom.js';
+import { $, esc, debounce, fmtNumber } from '../lib/dom.js';
 
 const TEMPLATE = `
   <div class="tool-head">
