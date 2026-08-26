@@ -266,6 +266,7 @@ const FILTERS = [
   { id: 'all', label: 'All', test: () => true },
   { id: 'video', label: 'Video', test: (f) => f.kind === 'video' },
   { id: 'audio', label: 'Audio', test: (f) => f.kind === 'audio' },
+  { id: 'image', label: 'Images', test: (f) => f.kind === 'image' },
   { id: 'archive', label: 'Archives', test: (f) => f.kind === 'archive' },
   { id: 'sd', label: 'Below 1080p', test: (f) => f.kind === 'video' && f.height && f.height < 1000 },
   { id: 'nosubs', label: 'No subtitles', test: (f) => f.kind === 'video' && !f.subTracks && !(f.sidecars || []).length },

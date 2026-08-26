@@ -17,6 +17,14 @@
 
 * { box-sizing: border-box; }
 
+/* The UA stylesheet's [hidden] { display: none } is the weakest rule there is,
+   so ANY author rule setting display beats it — and nearly every panel here is
+   a flex or grid container. Without this, an element JS marks hidden stays on
+   screen: the Utilities tabs rendered every section at once, and the Library's
+   Folders view drew itself underneath the file list it was meant to replace.
+   Hiding is not a thing individual components should have to remember. */
+[hidden] { display: none !important; }
+
 html { scrollbar-gutter: stable; }
 
 body {

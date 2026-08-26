@@ -55,5 +55,29 @@ for (const tag of ['section', 'div', 'textarea', 'select', 'ol', 'header']) {
   check(`<${tag}> balanced`, open === close, `${open} open / ${close} close`);
 }
 
+console.log('\n--- the [hidden] attribute actually hides ---');
+// The UA stylesheet's [hidden] { display: none } loses to ANY author rule that
+// sets display, and nearly every panel here is a flex or grid container. This
+// has now shipped three times: the Utilities tabs drew every section at once,
+// the regex mode cards all showed together, and the Library's Folders view drew
+// underneath the file list it was meant to replace. base.css overrides it once
+// for the whole app; if that rule ever goes, this fails instead of the UI.
+const base = readFileSync('public/styles/base.css', 'utf8');
+check('base.css forces [hidden] to win',
+  /\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(base));
+
+const index = readFileSync('public/index.html', 'utf8');
+check('base.css loads before the tool stylesheets',
+  index.indexOf('base.css') < index.indexOf('shell.css'));
+
+// Every stylesheet the page pulls in must exist, or a tool silently renders
+// unstyled — which looks like a layout bug rather than a missing file.
+const sheets = [...index.matchAll(/href="\/styles\/([^"]+)"/g)].map((m) => m[1]);
+let missingSheet = null;
+for (const s of sheets) {
+  try { readFileSync(`public/styles/${s}`); } catch { missingSheet = s; }
+}
+check(`all ${sheets.length} stylesheets exist`, missingSheet === null, missingSheet || '');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -222,6 +222,7 @@ What it surfaces:
   library of thousands costs nothing until you actually look at it. The cache key
   folds in size and mtime, so an edited file gets a fresh frame rather than a
   stale one. Toggle them off in the controls if you would rather have the density
+- **Images** — indexed by size, with a thumbnail like anything else
 - **Archives** — `.zip`, `.rar`, `.7z`, `.iso` and friends, indexed by size but
   never handed to ffmpeg, since there is nothing in one for it to read
 - **Over 4 GB** and **Unreadable** (a file ffmpeg cannot make sense of)

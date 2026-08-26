@@ -19,11 +19,6 @@
 }
 .ut-sec-sub { color: var(--text-dim); font-size: 13px; margin: 4px 0 0; line-height: 1.5; }
 
-/* An author "display" rule outranks the UA stylesheet's [hidden] { display:none },
-   which is what kept the regex mode cards all on screen at once. This puts the
-   attribute back in charge. */
-.ut-card[hidden] { display: none !important; }
-
 /* --- Regex: pick what you are here to do --- */
 .rx-modes { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 2px; }
 .rx-modes-q { color: var(--text-dim); font-size: 13px; flex: 0 0 auto; }
@@ -144,7 +139,6 @@
 .rx-part { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .rx-part select { flex: 0 0 auto; }
 .rx-part input[type="text"] { flex: 1; min-width: 110px; }
-.rx-part [hidden] { display: none !important; }
 
 .rx-explain {
   margin: 0;
