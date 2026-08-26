@@ -398,7 +398,7 @@ async function rdUndoLast() {
 
 // --- Preferences (which listing, which sort) ---
 
-const RD_PREFS_KEY = 'media-library:reddit-prefs';
+const RD_PREFS_KEY = 'multitool:reddit-prefs';
 
 function rdSavePrefs() {
   try {
