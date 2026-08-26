@@ -239,16 +239,19 @@ function dlLoadPrefs() {
 }
 
 // --- Jobs ---
-async function dlStart(opts) {
+// `from` is whatever describes this download: the current probe for a fresh
+// one, or the job being replayed for a retry.
+async function dlStart(opts, from) {
+  const src = from || dlInfo;
   dlClearError();
   try {
     const res = await fetch('/api/dl/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        url: dlInfo ? dlInfo.url : dl.url.value.trim(),
-        title: dlInfo ? dlInfo.title : null,
-        thumbnail: dlInfo ? dlInfo.thumbnail : null,
+        url: src ? src.url : dl.url.value.trim(),
+        title: src ? src.title : null,
+        thumbnail: src ? src.thumbnail : null,
         preferMp4: dlPreferMp4,
         ...opts,
       }),
@@ -268,6 +271,16 @@ async function dlStart(opts) {
 
 async function dlCancel(id) {
   try { await fetch(`/api/dl/cancel?job=${encodeURIComponent(id)}`, { method: 'POST' }); } catch { /* ignore */ }
+}
+
+// Runs a failed or cancelled job again with the exact options it started with.
+// The server retires the old entry as the new one takes its place.
+function dlRetry(id) {
+  const job = dlJobs.get(id);
+  if (!job) return;
+  // History written before jobs recorded their options falls back to "best
+  // available", which is what the probe's own default row does.
+  dlStart({ ...(job.opts || {}), retryOf: job.id }, job);
 }
 
 async function dlReveal(id) {
@@ -302,11 +315,19 @@ function dlJobHtml(j) {
         ? esc(j.files[j.files.length - 1].split(/[\\/]/).pop())
         : '';
 
-  const actions = live
-    ? `<button class="btn-ghost" type="button" data-dl-cancel="${esc(j.id)}">Cancel</button>`
-    : j.status === 'done' && j.files.length
-      ? `<button class="btn-ghost" type="button" data-dl-reveal="${esc(j.id)}">Show in folder</button>`
-      : '';
+  // Anything that didn't finish keeps its row and offers to run again; a
+  // partial file left behind is still worth being able to open.
+  const actions = [];
+  if (live) {
+    actions.push(`<button class="btn-ghost" type="button" data-dl-cancel="${esc(j.id)}">Cancel</button>`);
+  } else {
+    if (j.status !== 'done') {
+      actions.push(`<button class="btn-ghost dl-retry" type="button" data-dl-retry="${esc(j.id)}">Retry</button>`);
+    }
+    if (j.files.length) {
+      actions.push(`<button class="btn-ghost" type="button" data-dl-reveal="${esc(j.id)}">Show in folder</button>`);
+    }
+  }
 
   return `<div class="dl-job ${esc(j.status)}">
     ${j.thumbnail ? `<div class="dl-job-thumb"><img src="${esc(j.thumbnail)}" alt="" loading="lazy" /></div>` : ''}
@@ -318,7 +339,7 @@ function dlJobHtml(j) {
       <div class="dl-track"><div class="dl-fill" style="width:${j.status === 'done' ? 100 : j.pct || 0}%"></div></div>
       <div class="dl-job-foot">
         <span class="dl-job-meta">${meta}</span>
-        ${actions}
+        <span class="dl-job-acts">${actions.join('')}</span>
       </div>
     </div>
   </div>`;
@@ -361,6 +382,12 @@ function dlConnect() {
     let job;
     try { job = JSON.parse(e.data); } catch { return; }
     if (!job || !job.id) return; // the opening hello frame
+    // A retry supersedes the attempt it replayed; the server says so here.
+    if (job.removed) {
+      dlJobs.delete(job.id);
+      dlRenderJobs();
+      return;
+    }
     dlJobs.set(job.id, job);
     dlRenderJobs();
     // A job that picked a new folder is the server's record of "last used".
@@ -401,6 +428,8 @@ function bindDownloader() {
   dl.jobs.addEventListener('click', (e) => {
     const cancel = e.target.closest('[data-dl-cancel]');
     if (cancel) { dlCancel(cancel.dataset.dlCancel); return; }
+    const retry = e.target.closest('[data-dl-retry]');
+    if (retry) { dlRetry(retry.dataset.dlRetry); return; }
     const reveal = e.target.closest('[data-dl-reveal]');
     if (reveal) dlReveal(reveal.dataset.dlReveal);
   });
