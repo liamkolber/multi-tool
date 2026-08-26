@@ -238,6 +238,13 @@ whatever Windows opens it with, exactly as a double-click would), **Reveal**
 Converter). Sorting by **Folder** groups everything by location, which is the
 useful order when working through duplicates.
 
+Sorting by **Duplicate sets** keeps each set together — ordered by the biggest
+file in it, largest copy first inside it — so the one worth keeping heads its
+group and everything under it is a candidate. Alternate sets are tinted so where
+one ends and the next begins is obvious. Each row says which set it belongs to
+("same length · 1 of 4"), and the **Reclaimable** figure is what deleting all
+but the largest copy of every set would free, counted once per set.
+
 ### Deleting
 
 **Delete** moves the file to the **Recycle Bin**. Never straight off the disk —

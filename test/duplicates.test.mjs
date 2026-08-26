@@ -61,7 +61,8 @@ check('byte-identical pair reads as identical',
   of('Interstellar.2014.1080p.BluRay.mkv').identical
   && of('vid_0093_final_RENAMED.mkv').identical);
 check('…and reports that as the reason',
-  reason('vid_0093_final_RENAMED.mkv') === 'identical file');
+  reason('vid_0093_final_RENAMED.mkv').startsWith('identical file'),
+  reason('vid_0093_final_RENAMED.mkv'));
 check('a wholly unrelated name is no obstacle',
   lbIsDuplicate(of('vid_0093_final_RENAMED.mkv')));
 
@@ -91,9 +92,41 @@ console.log('\n--- honest about what it cannot know ---');
 // cannot tell them apart, and the label says "same length" rather than claiming
 // they are the same file.
 check('a coincidental length match is labelled as such',
-  reason('Gravity.2013.1080p.mkv') === 'same length');
+  reason('Gravity.2013.1080p.mkv').startsWith('same length'),
+  reason('Gravity.2013.1080p.mkv'));
 check('it is never called identical',
   !of('Gravity.2013.1080p.mkv').identical);
+
+console.log('\n--- sets have an identity, so they can be sorted together ---');
+// The four 40-second files are one length set; the byte-identical pair is a
+// stronger set and is grouped by that instead.
+const idA = of('Interstellar.2014.1080p.BluRay.mkv').groupId;
+const idB = of('vid_0093_final_RENAMED.mkv').groupId;
+check('an identical pair shares one group', idA === idB, `ids ${idA}/${idB}`);
+check('and that group holds exactly the two of them',
+  of('Interstellar.2014.1080p.BluRay.mkv').groupCount === 2);
+
+const gravity = of('Gravity.2013.1080p.mkv');
+check('a length-only match groups by length instead',
+  gravity.groupId !== idA, `ids ${gravity.groupId}/${idA}`);
+
+// Keeping the largest copy of the identical pair leaves one 592002-byte file.
+check('waste counts every copy but the largest',
+  of('vid_0093_final_RENAMED.mkv').groupWaste === 592002,
+  String(of('vid_0093_final_RENAMED.mkv').groupWaste));
+
+// Reclaimable must count each set once, not once per member, or a set of three
+// would be counted three times over.
+const seen = new Set();
+let reclaimable = 0;
+for (const f of FILES) {
+  const d = of(f.name);
+  if (!d || !lbIsDuplicate(d) || seen.has(d.groupId)) continue;
+  seen.add(d.groupId);
+  reclaimable += d.groupWaste;
+}
+check('reclaimable counts each set once',
+  reclaimable < FILES.reduce((n, f) => n + f.size, 0), `${reclaimable} bytes across ${seen.size} sets`);
 
 console.log('\n--- a library with nothing in common stays quiet ---');
 const clean = lbDuplicates([

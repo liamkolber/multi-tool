@@ -43,6 +43,7 @@ const TEMPLATE = `
       <option value="size">Largest first</option>
       <option value="duration">Longest first</option>
       <option value="height">Highest resolution</option>
+      <option value="dupe">Duplicate sets</option>
       <option value="dir">Folder</option>
       <option value="mtime">Newest first</option>
     </select>
@@ -282,6 +283,11 @@ function lbDuplicates(files) {
   });
 
   const out = new Map();
+  // groupBy hands every member of a set the same array, so the array itself is
+  // the set's identity — no need to invent a key.
+  const ids = new Map();
+  let nextId = 0;
+
   for (const f of videos) {
     const flags = {
       identical: identical.has(f.path),
@@ -289,7 +295,19 @@ function lbDuplicates(files) {
       name: byName.has(f.path),
     };
     if (!flags.identical && !flags.length && !flags.name) continue;
-    flags.group = identical.get(f.path) || byLength.get(f.path) || byName.get(f.path);
+
+    // Strongest signal wins, so a set is grouped by the best evidence it has.
+    const group = identical.get(f.path) || byLength.get(f.path) || byName.get(f.path);
+    if (!ids.has(group)) ids.set(group, ++nextId);
+
+    const sizes = group.map((x) => x.size || 0);
+    flags.group = group;
+    flags.groupId = ids.get(group);
+    flags.groupCount = group.length;
+    flags.groupMax = Math.max(...sizes);
+    // Keeping the largest copy, this is what the rest of the set is costing.
+    flags.groupWaste = sizes.reduce((n, s) => n + s, 0) - flags.groupMax;
+
     out.set(f.path, flags);
   }
   return out;
@@ -303,11 +321,14 @@ function lbIsDuplicate(d) {
 
 function lbDupeReason(d) {
   if (!d) return '';
-  if (d.identical) return 'identical file';
-  if (d.length && d.name) return 'same name and length';
-  if (d.length) return 'same length';
-  if (d.name) return 'same name only';
-  return '';
+  const why = d.identical ? 'identical file'
+    : d.length && d.name ? 'same name and length'
+      : d.length ? 'same length'
+        : d.name ? 'same name only' : '';
+  if (!why) return '';
+  // "1 of 3" is the part that tells you whether it is worth opening.
+  const n = d.groupCount || 0;
+  return n > 1 ? `${why} · 1 of ${n}` : why;
 }
 
 // --- Filters ---
@@ -348,6 +369,20 @@ function lbVisible() {
     if (lbSort === 'name') return a.name.localeCompare(b.name);
     // Within a folder, by name — otherwise the grouping is there but unordered.
     if (lbSort === 'dir') return a.dir.localeCompare(b.dir) || a.name.localeCompare(b.name);
+
+    // Sets first by their biggest file, then together, then biggest copy first
+    // inside the set — so the one worth keeping heads its own group and
+    // everything under it is a candidate to delete.
+    if (lbSort === 'dupe') {
+      const da = lbDupes.get(a.path) || {};
+      const db = lbDupes.get(b.path) || {};
+      const ma = da.groupMax == null ? -1 : da.groupMax;
+      const mb = db.groupMax == null ? -1 : db.groupMax;
+      if (ma !== mb) return mb - ma;
+      if (da.groupId !== db.groupId) return (da.groupId || 0) - (db.groupId || 0);
+      return (b.size || 0) - (a.size || 0);
+    }
+
     return ((a[lbSort] || 0) - (b[lbSort] || 0)) * dir;
   });
 }
@@ -416,6 +451,20 @@ function lbShowView(view) {
   else lbRenderList();
 }
 
+// What deleting all but the largest copy in every set would free. Counted once
+// per set, not once per file, or every set would be counted as many times as it
+// has members.
+function lbReclaimable() {
+  const seen = new Set();
+  let total = 0;
+  for (const d of lbDupes.values()) {
+    if (!lbIsDuplicate(d) || seen.has(d.groupId)) continue;
+    seen.add(d.groupId);
+    total += d.groupWaste || 0;
+  }
+  return total;
+}
+
 // --- Rendering ---
 function lbRenderStats() {
   if (!lbFiles.length) { lb.stats.hidden = true; return; }
@@ -429,6 +478,7 @@ function lbRenderStats() {
     ['Below 1080p', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'sd').test).length)],
     ['No subtitles', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'nosubs').test).length)],
     ['Possible dupes', fmtNumber(lbFiles.filter(FILTERS.find((x) => x.id === 'dupes').test).length)],
+    ['Reclaimable', lbBytes(lbReclaimable())],
   ];
   lb.stats.hidden = false;
   lb.stats.innerHTML = cells.map(([k, v]) =>
@@ -475,7 +525,10 @@ function lbRowHtml(f) {
          onerror="this.classList.add('failed')" />`
     : '';
 
-  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}">
+  // Banding by set only means anything when the sets are actually adjacent.
+  const band = lbSort === 'dupe' && dupe && dupe.groupId % 2 === 0 ? ' band' : '';
+
+  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}${band}">
     ${thumb}
     <div class="lb-row-main">
       <div class="lb-row-name" title="${esc(f.path)}">${esc(f.name)}</div>

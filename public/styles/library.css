@@ -142,6 +142,9 @@
   padding: 10px 14px;
 }
 .lb-row.dupe { border-color: #6b5a2a; }
+/* Sorted into sets, alternate ones get a faint tint so where one ends and the
+   next begins is visible without a header row per group. */
+.lb-row.band { background: var(--surface-2); }
 .lb-row.bad { border-color: #6b2f2f; }
 
 /* Poster frames. A fixed box keeps rows the same height whether the image has
