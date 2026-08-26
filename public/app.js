@@ -11,9 +11,10 @@ import { tool as media } from './tools/media.js';
 import { tool as downloader } from './tools/downloader.js';
 import { tool as convert } from './tools/convert.js';
 import { tool as library } from './tools/library.js';
+import { tool as utils } from './tools/utils.js';
 import { tool as reddit } from './tools/reddit.js';
 
-const TOOLS = [media, downloader, convert, library, reddit];
+const TOOLS = [media, downloader, convert, library, utils, reddit];
 const byId = new Map(TOOLS.map((t) => [t.id, t]));
 
 const LAST_TOOL_KEY = 'multitool:last';

@@ -1,12 +1,13 @@
 {
   "name": "liams-multi-tool",
   "version": "2.0.0",
-  "description": "A local web app that hosts a set of personal tools: a media library, a video downloader, and a Reddit account browser",
+  "description": "A local web app that hosts a set of personal tools: a media library, a video downloader, an ffmpeg converter, a library scanner, developer utilities, and a Reddit account browser",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
     "start": "node server.mjs",
-    "get-tools": "powershell -ExecutionPolicy Bypass -File get-tools.ps1"
+    "get-tools": "powershell -ExecutionPolicy Bypass -File get-tools.ps1",
+    "test": "node test/regex.test.mjs && node test/utils.test.mjs"
   },
   "engines": {
     "node": ">=18"

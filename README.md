@@ -7,6 +7,9 @@ pick a tool, get on with it.
 |---|---|---|
 | 🎬 | **Media Library** | Movies & TV via the [YTS](https://yts.gg) API and anime via [AniList](https://anilist.co), from one search box |
 | ⬇ | **Downloader** | Paste any URL [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports and pull it at the highest quality available |
+| 🎛️ | **Converter** | Convert, trim, resize, compress and extract — a front end for ffmpeg |
+| 📚 | **Library** | Scan a folder and see what is really in it: sizes, quality, subtitles, duplicates |
+| 🧪 | **Utilities** | Regex (build, infer, explain, test), JSON, encoding, hashes, timestamps, text |
 | 👽 | **Reddit** | Sign into your own account and browse, sort and clear out your saved posts, submissions and votes |
 
 No build step, no npm dependencies — just Node. (The Downloader additionally
@@ -226,6 +229,40 @@ lives in a gitignored `.library-index.json`.
 The walk skips hidden folders, `node_modules`, recycle bins and Windows system
 directories, and stops at 12 levels deep or 20,000 files.
 
+## 🧪 Utilities
+
+The small conversions you reach for constantly, with no server half at all —
+nothing it does leaves the browser.
+
+**Regex** is the substantial one, and it works three ways:
+
+- **Build it** — stack pieces ("a digit, exactly 3 times", "this exact text",
+  "one of these words") and the pattern is written for you, correctly escaped
+  and correctly wrapped. A multi-character piece is parenthesised before a
+  quantifier, so "one or more of `abc`" gives `(?:abc)+` rather than
+  `abc+`, which repeats only the c.
+- **Infer it from examples** — paste strings you want matched, one per line, and
+  it generalises them. `AB-1234` / `XY-5678` / `QQ-0001` gives
+  `^[A-Z]{2}-\d{4}$`. Separators identical across every example are kept
+  verbatim, since they are structure rather than something to guess at. Examples
+  that share no structure fall back to matching them literally, and say so.
+- **What it means** — any pattern, yours or one you pasted, described token by
+  token in English.
+
+Then test it against real text with live highlighting, a match count, and a
+table of capture groups (named groups included).
+
+Also here: **JSON** format/minify with the parse error resolved to a line and
+column; **Encode** for Base64 (standard and URL-safe, UTF-8 correct), URL
+components and HTML entities; **Hash** for SHA-1/256/384/512; **Time** for
+converting between Unix seconds, milliseconds, ISO 8601 and local; and **Text**
+for case conversion, slugs, trimming, deduping, sorting and reversing lines.
+
+> One limit worth knowing: a JavaScript regex cannot be interrupted once it is
+> running, so a pathological pattern against a large input can hang the tab.
+> The subject is capped at 20,000 characters, which keeps the worst case
+> survivable — it is a mitigation, not a cure.
+
 ## 👽 Reddit
 
 Signs into **your own** Reddit account through the official OAuth API and shows
@@ -282,6 +319,13 @@ Override the redirect URI with `REDDIT_REDIRECT_URI` if you run on another port.
 - **Tick items and clear them out in bulk** — Unsave, Unhide, Clear vote, or
   Delete (delete only appears for things you actually wrote, and always confirms)
 - A bulk **Unsave** offers an **Undo** that puts everything straight back
+
+## Tests
+
+`npm test` covers the parts with real logic in them: regex building,
+inference and explanation, plus the Base64 and text transforms. They run in
+plain Node against the same modules the browser loads — no framework, no build
+step.
 
 ## How it works
 

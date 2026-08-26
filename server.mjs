@@ -19,8 +19,9 @@ export const APP_NAME = "Liam's Multi-Tool";
 // Longest prefix first, so '/api/reddit/' wins over the media tool's '/api/'.
 const TOOLS = [media, downloader, convert, library, reddit].sort((a, b) => b.prefix.length - a.prefix.length);
 
-// What the launcher screen renders. Kept deliberately small — the client owns
-// the UI, the server just says which tools exist.
+// The tools that have a server half. A tool needs one only if it does something
+// the browser cannot — Utilities is entirely client-side and so appears in the
+// rail (from public/app.js) without appearing here.
 function handleToolManifest(res) {
   sendJson(res, 200, {
     status: 'ok',
