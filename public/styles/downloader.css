@@ -134,6 +134,8 @@
 
 .dl-job-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; min-height: 20px; }
 .dl-job-acts { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.dl-forget:hover { color: #e07070; border-color: #6b2f2f; }
+.btn-ghost.armed { color: #fff; background: #8c2f2f; border-color: #b04545; }
 .dl-job.error .dl-retry, .dl-job.cancelled .dl-retry { color: var(--text); border-color: var(--text-dim); }
 .dl-job-meta { color: var(--text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-job.error .dl-job-meta { color: #e07070; }

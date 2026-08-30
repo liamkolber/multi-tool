@@ -462,6 +462,15 @@ Reddit then asks you to approve the scopes `identity history save edit vote read
 token is stored locally in a gitignored `.reddit.json` and never leaves your
 machine. **Disconnect** revokes it with Reddit and deletes it.
 
+Finished downloads keep their place in the list with **Remove**, and the header
+carries **Clear history**. Both drop records only — the downloaded files are
+never touched. Clearing asks twice, since a thrown-away list has no undo even
+when the files are safe. A download still running cannot be removed; cancel it
+first, or it would be left with nothing watching it.
+
+yt-dlp decides what is supported, not this tool, so anything it has an extractor
+for works — RedGifs included (single posts, user galleries and searches).
+
 Override the redirect URI with `REDDIT_REDIRECT_URI` if you run on another port.
 
 ### What you can do

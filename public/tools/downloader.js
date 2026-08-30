@@ -26,6 +26,7 @@ const TEMPLATE = `
     <h2 id="dl-jobs-title" class="dl-h2" hidden>Downloads</h2>
     <span id="dl-save-dir" class="dl-save-dir" hidden></span>
     <button id="dl-open-folder" class="btn-ghost" type="button" hidden>Open folder</button>
+    <button id="dl-clear" class="btn-ghost" type="button" hidden>Clear history</button>
   </div>
   <div id="dl-jobs" class="dl-jobs"></div>`;
 
@@ -41,6 +42,7 @@ function cacheEls() {
   jobs: $('dl-jobs'),
   jobsTitle: $('dl-jobs-title'),
   openFolder: $('dl-open-folder'),
+  clear: $('dl-clear'),
   saveDir: $('dl-save-dir'),
 });
 }
@@ -284,6 +286,39 @@ function dlRetry(id) {
   dlStart({ ...(job.opts || {}), retryOf: job.id }, job);
 }
 
+// Drops the row and nothing else — the downloaded file stays where it is.
+async function dlForget(id) {
+  try {
+    await fetch(`/api/dl/forget?job=${encodeURIComponent(id)}`, { method: 'POST' });
+  } catch { /* the row stays; the event stream will correct it if it went */ }
+}
+
+// Two-step, because there is no undo for a list you have thrown away — even
+// though the files themselves are untouched.
+let dlClearArmed = false;
+let dlClearTimer = null;
+
+function dlDisarmClear() {
+  clearTimeout(dlClearTimer);
+  dlClearArmed = false;
+  dl.clear.textContent = 'Clear history';
+  dl.clear.classList.remove('armed');
+}
+
+async function dlClearHistory() {
+  if (!dlClearArmed) {
+    dlClearArmed = true;
+    dl.clear.textContent = 'Clear all? Files stay';
+    dl.clear.classList.add('armed');
+    dlClearTimer = setTimeout(dlDisarmClear, 4000);
+    return;
+  }
+  dlDisarmClear();
+  try {
+    await fetch('/api/dl/clear', { method: 'POST' });
+  } catch { /* ignore */ }
+}
+
 async function dlReveal(id) {
   const qs = id ? `?job=${encodeURIComponent(id)}` : '';
   try { await fetch(`/api/dl/reveal${qs}`, { method: 'POST' }); } catch { /* ignore */ }
@@ -328,6 +363,8 @@ function dlJobHtml(j) {
     if (j.files.length) {
       actions.push(`<button class="btn-ghost" type="button" data-dl-reveal="${esc(j.id)}">Show in folder</button>`);
     }
+    actions.push(`<button class="btn-ghost dl-forget" type="button" data-dl-forget="${esc(j.id)}"
+      title="Remove from this list — the file is not deleted">Remove</button>`);
   }
 
   return `<div class="dl-job ${esc(j.status)}">
@@ -350,6 +387,11 @@ function dlRenderJobs() {
   const list = [...dlJobs.values()].sort((a, b) => Number(b.id) - Number(a.id));
   dl.jobsTitle.hidden = list.length === 0;
   dl.openFolder.hidden = list.length === 0;
+  // Only offered when something is actually finished — a list of one running
+  // download has nothing clearable in it.
+  const finished = list.filter((j) => !DL_LIVE.has(j.status)).length;
+  dl.clear.hidden = finished === 0;
+  if (!finished) dlDisarmClear();
   dl.jobs.innerHTML = list.map(dlJobHtml).join('');
 }
 
@@ -429,7 +471,9 @@ function bindDownloader() {
     const retry = e.target.closest('[data-dl-retry]');
     if (retry) { dlRetry(retry.dataset.dlRetry); return; }
     const reveal = e.target.closest('[data-dl-reveal]');
-    if (reveal) dlReveal(reveal.dataset.dlReveal);
+    if (reveal) { dlReveal(reveal.dataset.dlReveal); return; }
+    const forget = e.target.closest('[data-dl-forget]');
+    if (forget) dlForget(forget.dataset.dlForget);
   });
 
   dl.tools.addEventListener('click', (e) => {
@@ -437,6 +481,7 @@ function bindDownloader() {
   });
 
   dl.openFolder.addEventListener('click', () => dlReveal(null));
+  dl.clear.addEventListener('click', dlClearHistory);
 }
 export const tool = {
   id: 'downloader',
