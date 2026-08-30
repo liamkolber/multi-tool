@@ -171,6 +171,48 @@
   display: block;
 }
 .lb-thumb.failed { visibility: hidden; }
+.lb-thumb[data-preview] { cursor: pointer; }
+.lb-thumb[data-preview]:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* --- Contact sheet on hover --- */
+.lb-sheet {
+  position: fixed;
+  z-index: 40;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 8px;
+  pointer-events: none;
+}
+.lb-sheet img { display: block; width: 100%; height: auto; border-radius: 6px; }
+.lb-sheet-wait {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 26px 18px;
+  text-align: center;
+}
+
+/* --- Preview in the modal --- */
+.lb-preview-title {
+  font-size: 16px;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+.lb-preview-meta { color: var(--text-dim); font-size: 12.5px; margin-bottom: 12px; }
+.lb-player {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  border-radius: 8px;
+}
+.lb-preview-note {
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+  margin-top: 12px;
+}
 
 .lb-toggle {
   display: flex;

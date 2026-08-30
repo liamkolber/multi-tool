@@ -4,7 +4,7 @@
 // memory, so search, sort and every filter are instant and cost no disk work.
 // Same idea as the Reddit tool: fetch once, then never wait again.
 
-import { $, esc, fmtNumber, debounce } from '../lib/dom.js';
+import { $, esc, fmtNumber, debounce, showModal, closeModal } from '../lib/dom.js';
 import { idleStream } from '../lib/stream.js';
 
 const TEMPLATE = `
@@ -68,6 +68,8 @@ const TEMPLATE = `
     sizes, running times, resolutions, subtitles and duplicates.
   </div>
 
+  <div id="lb-sheet" class="lb-sheet" hidden></div>
+
   <div id="lb-list" class="lb-list"></div>
   <div id="lb-folders" class="lb-list" hidden></div>`;
 
@@ -97,6 +99,7 @@ function cacheEls() {
     fdSort: $('lb-fd-sort'),
     fdTop: $('lb-fd-top'),
     folders: $('lb-folders'),
+    sheet: $('lb-sheet'),
   });
 }
 
@@ -657,6 +660,7 @@ function lbRowHtml(f, prev, next) {
   // is what triggers the server to render that frame.
   const thumb = lbThumbs && (f.kind === 'video' || f.kind === 'image') && !f.unreadable
     ? `<img class="lb-thumb" loading="lazy" decoding="async" alt=""
+         data-preview="${esc(f.path)}" title="Click to play · hover for a contact sheet"
          src="/api/library/thumb?path=${encodeURIComponent(f.path)}"
          onerror="this.classList.add('failed')" />`
     : '';
@@ -752,6 +756,88 @@ function lbRenderList() {
   lbWatchMore(rows.length);
 }
 
+
+// --- Preview -----------------------------------------------------------------
+// Hovering a thumbnail shows a contact sheet: sixteen frames from across the
+// whole file. One poster frame says almost nothing about a two-hour video, and
+// almost nothing at all about a file named after its hash.
+const SHEET_DELAY_MS = 350;
+
+let lbSheetTimer = null;
+let lbSheetFor = null;
+
+function lbHideSheet() {
+  clearTimeout(lbSheetTimer);
+  lbSheetTimer = null;
+  lbSheetFor = null;
+  lb.sheet.hidden = true;
+  lb.sheet.innerHTML = '';
+}
+
+function lbShowSheet(thumb, path) {
+  if (lbSheetFor === path) return;
+  lbSheetFor = path;
+
+  lb.sheet.hidden = false;
+  lb.sheet.innerHTML = '<div class="lb-sheet-wait">Building a contact sheet…</div>';
+
+  // Positioned against the row rather than the pointer, so it does not skate
+  // around while you move across the thumbnail.
+  const box = thumb.getBoundingClientRect();
+  const width = Math.min(560, window.innerWidth - 32);
+  let left = box.right + 12;
+  if (left + width > window.innerWidth - 16) left = Math.max(16, box.left - width - 12);
+  lb.sheet.style.left = `${left}px`;
+  lb.sheet.style.width = `${width}px`;
+  // Clamped so a row near the bottom does not push it off screen.
+  const top = Math.min(Math.max(12, box.top - 60), window.innerHeight - 380);
+  lb.sheet.style.top = `${top}px`;
+
+  const img = new Image();
+  img.onload = () => {
+    if (lbSheetFor !== path) return; // moved on while it was building
+    lb.sheet.innerHTML = '';
+    lb.sheet.appendChild(img);
+  };
+  img.onerror = () => {
+    if (lbSheetFor !== path) return;
+    lb.sheet.innerHTML = '<div class="lb-sheet-wait">No contact sheet for this one.</div>';
+  };
+  img.src = `/api/library/sheet?path=${encodeURIComponent(path)}`;
+}
+
+// Clicking a thumbnail plays the file in the shared modal. The server serves
+// byte ranges, so seeking works without downloading the whole thing first.
+function lbPreview(path) {
+  const f = lbFiles.find((x) => x.path === path);
+  if (!f) return;
+  lbHideSheet();
+
+  const url = `/api/library/stream?path=${encodeURIComponent(path)}`;
+  const media = f.kind === 'audio'
+    ? `<audio class="lb-player" controls autoplay src="${esc(url)}"></audio>`
+    : `<video class="lb-player" controls autoplay playsinline src="${esc(url)}"></video>`;
+
+  showModal(`
+    <h2 class="lb-preview-title">${esc(f.name)}</h2>
+    <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
+      .filter(Boolean).join(' · '))}</div>
+    ${media}
+    <div class="lb-preview-note" id="lb-preview-note" hidden>
+      The browser will not play this one — Matroska and some codecs have no
+      support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
+    </div>`);
+
+  // A codec the browser cannot decode fails silently otherwise: black box, no
+  // error, no explanation.
+  const el = document.querySelector('.lb-player');
+  if (el) {
+    el.addEventListener('error', () => {
+      const note = $('lb-preview-note');
+      if (note) note.hidden = false;
+    });
+  }
+}
 
 // Deleted files stay listed until dismissed, so an accident is one click to
 // undo rather than a trip through the Recycle Bin looking for the right name.
@@ -1063,7 +1149,38 @@ function bindLibrary() {
     lbRenderList();
   });
 
+  // Delegated, because rows come and go as chunks load.
+  lb.list.addEventListener('mouseover', (e) => {
+    const thumb = e.target.closest('[data-preview]');
+    if (!thumb) return;
+    const path = thumb.dataset.preview;
+    if (lbSheetFor === path) return;
+    clearTimeout(lbSheetTimer);
+    lbSheetTimer = setTimeout(() => lbShowSheet(thumb, path), SHEET_DELAY_MS);
+  });
+
+  lb.list.addEventListener('mouseout', (e) => {
+    const thumb = e.target.closest('[data-preview]');
+    if (!thumb) return;
+    // Leaving for the sheet itself should not dismiss it.
+    if (e.relatedTarget && lb.sheet.contains(e.relatedTarget)) return;
+    lbHideSheet();
+  });
+
+  // Scrolling would leave it pinned to a row that has moved.
+  lb.list.addEventListener('wheel', lbHideSheet, { passive: true });
+  window.addEventListener('scroll', lbHideSheet, { passive: true });
+
+  // The modal owns the Open button in the unplayable-codec note.
+  document.addEventListener('click', (e) => {
+    const modalOpen = e.target.closest('#modal-body [data-open]');
+    if (modalOpen) { lbOpen(modalOpen.dataset.open); closeModal(); }
+  });
+
   lb.list.addEventListener('click', (e) => {
+    const preview = e.target.closest('[data-preview]');
+    if (preview) { lbPreview(preview.dataset.preview); return; }
+
     if (e.target.closest('[data-more]')) { lbShowMore(); return; }
 
     const del = e.target.closest('[data-delete]');

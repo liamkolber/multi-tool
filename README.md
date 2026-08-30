@@ -245,6 +245,23 @@ one ends and the next begins is obvious. Each row says which set it belongs to
 ("same length · 1 of 4"), and the **Reclaimable** figure is what deleting all
 but the largest copy of every set would free, counted once per set.
 
+### Seeing what a file is
+
+Hovering a thumbnail builds a **contact sheet** — sixteen frames spread across
+the whole running time, tiled into one image. A single poster frame says almost
+nothing about a two-hour video and nothing at all about a file named after its
+hash. Sheets cache alongside the thumbnails, keyed the same way.
+
+Clicking a thumbnail **plays the file** in place. The server answers byte
+ranges, so seeking works without downloading the whole thing first. Chromium
+cannot decode Matroska or some codecs; when that happens the player says so and
+offers to hand the file to the external app instead of just showing a black box.
+
+Sheets are built from sixteen fast seeks in one ffmpeg process rather than one
+pass with an  filter — the filter decodes the entire file, which on a long
+video is minutes, while seeking to each point is near-instant. Measured at 265ms
+for a two-minute clip, and 1.6ms once cached.
+
 ### Filters
 
 Filters combine. Picking several ANDs them, so **Same length & size** plus
