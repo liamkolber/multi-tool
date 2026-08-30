@@ -188,6 +188,11 @@
   box-shadow: var(--shadow);
   padding: 8px;
   pointer-events: none;
+  /* The JS sizes it to fit; these are the backstop, so a wrong measurement
+     clips rather than running off the screen. */
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: hidden;
 }
 .lb-sheet img { display: block; width: 100%; height: auto; border-radius: 6px; }
 .lb-sheet-wait {

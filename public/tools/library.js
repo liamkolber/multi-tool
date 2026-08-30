@@ -960,45 +960,86 @@ const SHEET_DELAY_MS = 350;
 
 let lbSheetTimer = null;
 let lbSheetFor = null;
+// The thumbnail the popover hangs off, kept so it can be repositioned once
+// the image has loaded and its real size is finally known.
+let lbSheetAnchor = null;
 
 function lbHideSheet() {
   clearTimeout(lbSheetTimer);
   lbSheetTimer = null;
   lbSheetFor = null;
+  lbSheetAnchor = null;
   lb.sheet.hidden = true;
   lb.sheet.innerHTML = '';
+  lb.sheet.style.width = '';
+}
+
+// Places the popover from its ACTUAL measured size. The first version clamped
+// against a guessed height, which held for landscape grids and not at all for
+// portrait ones — a 4x4 of vertical tiles is taller than the window, so the
+// clamp did nothing and the sheet ran off the bottom of the screen.
+function lbPlaceSheet() {
+  if (!lbSheetAnchor) return;
+  const M = 12;
+  const box = lbSheetAnchor;
+  const w = lb.sheet.offsetWidth;
+  const h = lb.sheet.offsetHeight;
+
+  // Right of the thumbnail by preference, left of it if that would overflow,
+  // and pinned inside the window if neither side fits.
+  let left = box.right + M;
+  if (left + w > window.innerWidth - M) left = box.left - w - M;
+  if (left < M) left = Math.max(M, Math.min(window.innerWidth - w - M, box.left));
+
+  // Centred on the row, then pulled back inside the window.
+  let top = box.top + (box.height / 2) - (h / 2);
+  top = Math.max(M, Math.min(window.innerHeight - h - M, top));
+
+  lb.sheet.style.left = left + 'px';
+  lb.sheet.style.top = top + 'px';
+}
+
+// Scales the sheet to fit BOTH dimensions of the window, so the shape of the
+// grid decides the size rather than a fixed width. A portrait 4x4 is about two
+// and a half times taller than it is wide.
+function lbSizeSheet(img) {
+  const M = 12;
+  const chrome = 18;                                   // the popover's padding
+  const maxW = Math.min(620, window.innerWidth - (2 * M) - chrome);
+  const maxH = window.innerHeight - (2 * M) - chrome;
+  const aspect = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 0.6;
+
+  let w = maxW;
+  if (w * aspect > maxH) w = maxH / aspect;
+  lb.sheet.style.width = Math.max(160, Math.floor(w) + chrome) + 'px';
 }
 
 function lbShowSheet(thumb, path) {
   if (lbSheetFor === path) return;
   lbSheetFor = path;
+  lbSheetAnchor = thumb.getBoundingClientRect();
 
   lb.sheet.hidden = false;
+  lb.sheet.style.width = '260px';
   lb.sheet.innerHTML = '<div class="lb-sheet-wait">Building a contact sheet…</div>';
-
-  // Positioned against the row rather than the pointer, so it does not skate
-  // around while you move across the thumbnail.
-  const box = thumb.getBoundingClientRect();
-  const width = Math.min(560, window.innerWidth - 32);
-  let left = box.right + 12;
-  if (left + width > window.innerWidth - 16) left = Math.max(16, box.left - width - 12);
-  lb.sheet.style.left = `${left}px`;
-  lb.sheet.style.width = `${width}px`;
-  // Clamped so a row near the bottom does not push it off screen.
-  const top = Math.min(Math.max(12, box.top - 60), window.innerHeight - 380);
-  lb.sheet.style.top = `${top}px`;
+  lbPlaceSheet();
 
   const img = new Image();
   img.onload = () => {
-    if (lbSheetFor !== path) return; // moved on while it was building
+    if (lbSheetFor !== path) return;   // moved on while it was building
     lb.sheet.innerHTML = '';
     lb.sheet.appendChild(img);
+    lbSizeSheet(img);
+    // Measured only once the image is in the document; before that the box
+    // still has the placeholder's height.
+    lbPlaceSheet();
   };
   img.onerror = () => {
     if (lbSheetFor !== path) return;
     lb.sheet.innerHTML = '<div class="lb-sheet-wait">No contact sheet for this one.</div>';
+    lbPlaceSheet();
   };
-  img.src = `/api/library/sheet?path=${encodeURIComponent(path)}`;
+  img.src = '/api/library/sheet?path=' + encodeURIComponent(path);
 }
 
 // Skips, in seconds. Back short and forward long is the shape you want for
@@ -1711,6 +1752,7 @@ function bindLibrary() {
   // Scrolling would leave it pinned to a row that has moved.
   lb.list.addEventListener('wheel', lbHideSheet, { passive: true });
   window.addEventListener('scroll', lbHideSheet, { passive: true });
+  window.addEventListener('resize', lbHideSheet, { passive: true });
 
   // The modal's own buttons: the Open fallback and the transport.
   document.addEventListener('click', (e) => {
