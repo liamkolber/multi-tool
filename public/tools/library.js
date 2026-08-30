@@ -1011,6 +1011,7 @@ const SEEK_FWD = 30;
 // every time the modal opens.
 let lbPlaying = null;
 let lbBoard = null;
+let lbBoardState = 'idle';   // idle | loading | ready | failed
 let lbDragging = false;
 
 const lbPlayer = () => document.querySelector('.lb-player');
@@ -1126,6 +1127,10 @@ function lbShowScrub(e) {
   if (label) label.textContent = lbTime(at);
 
   const img = $('lb-scrub-img');
+  if (img && !lbBoard) {
+    img.hidden = true;
+    if (label) label.textContent = (lbBoardState === 'loading' ? '· · ·  ' : '') + lbTime(at);
+  }
   if (img && lbBoard) {
     const i = Math.max(0, Math.min(lbBoard.count - 1, Math.floor(at / lbBoard.interval)));
     const col = i % lbBoard.cols;
@@ -1136,8 +1141,6 @@ function lbShowScrub(e) {
     img.style.backgroundSize = (lbBoard.cols * lbBoard.tileW) + 'px ' + (lbBoard.rows * lbBoard.tileH) + 'px';
     img.style.backgroundPosition = '-' + (col * lbBoard.tileW) + 'px -' + (row * lbBoard.tileH) + 'px';
     img.hidden = false;
-  } else if (img) {
-    img.hidden = true;
   }
 
   // Clamped to the stage so the preview never hangs off the edge.
@@ -1164,11 +1167,27 @@ function lbHideScrub() {
 // immediately, the image builds on first request and is cached after.
 async function lbLoadBoard(path) {
   lbBoard = null;
+  lbBoardState = 'loading';
   try {
     const res = await fetch('/api/library/board?path=' + encodeURIComponent(path));
     const json = await res.json();
-    if (json.status === 'ok') lbBoard = json.data;
-  } catch { /* the scrubber still shows a timestamp without it */ }
+    if (json.status !== 'ok') { lbBoardState = 'failed'; return; }
+
+    // Fetch the sheet before announcing it. Setting background-image and
+    // revealing the box in the same frame shows an empty rectangle until the
+    // image lands, which is what "the preview does not work" looks like.
+    const sheet = new Image();
+    sheet.onload = () => {
+      // Still the same file? The modal may have moved on while this loaded.
+      if (!lbPlaying || lbPlaying.path !== path) return;
+      lbBoard = json.data;
+      lbBoardState = 'ready';
+    };
+    sheet.onerror = () => { lbBoardState = 'failed'; };
+    sheet.src = json.data.src;
+  } catch {
+    lbBoardState = 'failed';
+  }
 }
 
 // Handled at the document because the player is rebuilt each time the modal
@@ -1283,14 +1302,16 @@ function lbPreview(path) {
     + '<div class="lb-stage" id="lb-stage">'
     + '<div class="lb-screen" id="lb-screen">'
     + media
+    + '</div>'
     + '<div class="lb-scrub" id="lb-scrub" hidden>'
-    + '<div class="lb-scrub-img" id="lb-scrub-img"></div>'
+    + '<div class="lb-scrub-img" id="lb-scrub-img" hidden></div>'
     + '<span class="lb-scrub-t" id="lb-scrub-t"></span>'
     + '</div>'
-    + '</div>'
     + '<div class="lb-timeline" id="lb-timeline" title="Click or drag to seek">'
+    + '<div class="lb-track">'
     + '<div class="lb-buffered" id="lb-buffered"></div>'
     + '<div class="lb-played" id="lb-played"></div>'
+    + '</div>'
     + '</div>'
     + '<div class="lb-transport">'
     + '<button class="lb-act lb-icon" type="button" id="lb-playpause" data-playpause title="Play (space)">▶</button>'

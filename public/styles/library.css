@@ -232,7 +232,8 @@
 /* --- Player -------------------------------------------------------------- */
 /* The native controls are gone: they duplicated every button here and their
    fullscreen took the video element alone, leaving the transport behind. */
-.lb-stage { display: flex; flex-direction: column; }
+/* position: relative because the scrub preview is positioned against it. */
+.lb-stage { display: flex; flex-direction: column; position: relative; }
 
 .lb-screen { position: relative; line-height: 0; }
 .lb-player {
@@ -242,21 +243,33 @@
   max-height: 62vh;
   object-fit: contain;
   background: #000;
-  border-radius: 8px 8px 0 0;
+  border-radius: 8px;
   cursor: pointer;
 }
 audio.lb-player { height: 54px; max-height: none; background: transparent; }
 
 /* --- Timeline --- */
+/* The hit area is 22px so it is easy to grab; the visible bar inside it is
+   thin. Drawn as a real element rather than by painting the ends of a thick bar
+   in the page colour — that trick showed as two grey bands the moment the
+   background behind it was not the page (fullscreen is black). */
 .lb-timeline {
-  position: relative;
   height: 22px;
+  display: flex;
+  align-items: center;
   cursor: pointer;
   touch-action: none;          /* or a drag scrolls the page on a trackpad */
-  background: var(--surface-3);
-  border-radius: 0 0 8px 8px;
-  overflow: hidden;
 }
+.lb-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+  transition: height 0.12s ease;
+}
+.lb-timeline:hover .lb-track { height: 10px; }
 .lb-buffered,
 .lb-played {
   position: absolute;
@@ -264,18 +277,8 @@ audio.lb-player { height: 54px; max-height: none; background: transparent; }
   width: 0;
   pointer-events: none;
 }
-.lb-buffered { background: rgba(255, 255, 255, 0.14); }
+.lb-buffered { background: rgba(255, 255, 255, 0.16); }
 .lb-played { background: var(--accent); }
-/* A hit area taller than the visible bar: 22px is easy to grab, and the bar
-   itself reads better thinner. */
-.lb-timeline::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  box-shadow: inset 0 8px 0 var(--surface), inset 0 -8px 0 var(--surface);
-  pointer-events: none;
-}
-.lb-timeline:hover .lb-played { box-shadow: 0 0 0 1px var(--accent-hover); }
 
 /* --- Scrub preview --- */
 .lb-scrub {
@@ -378,7 +381,7 @@ audio.lb-player { height: 54px; max-height: none; background: transparent; }
   border-radius: 0;
 }
 .lb-stage:fullscreen .lb-timeline,
-.lb-stage:-webkit-full-screen .lb-timeline { border-radius: 8px; margin-top: 8px; }
+.lb-stage:-webkit-full-screen .lb-timeline { margin-top: 6px; }
 
 .lb-preview-note {
   color: var(--text-dim);
