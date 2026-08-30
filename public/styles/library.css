@@ -114,6 +114,10 @@
 }
 
 .lb-filters { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+
+.lb-filters-toggle { flex: 0 0 auto; }
+/* Collapsed with filters still applied is the state worth flagging. */
+.lb-filters-toggle.has-filters { color: var(--text); border-color: var(--accent); }
 .lb-chip {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -225,6 +229,40 @@
   background: #000;
   border-radius: 8px;
 }
+/* --- Transport --- */
+.lb-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.lb-transport .lb-act { font-variant-numeric: tabular-nums; }
+.lb-play { min-width: 110px; }
+
+.lb-keys {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.lb-keys span { display: flex; align-items: center; gap: 5px; }
+.lb-keys kbd {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+}
+
 .lb-preview-note {
   color: var(--text-dim);
   font-size: 13px;

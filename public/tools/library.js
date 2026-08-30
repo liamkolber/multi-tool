@@ -48,6 +48,7 @@ const TEMPLATE = `
       <option value="dir">Folder</option>
       <option value="mtime">Newest first</option>
     </select>
+    <button id="lb-filters-toggle" class="lb-act lb-filters-toggle" type="button"></button>
     <div id="lb-filters" class="lb-filters"></div>
   </div>
 
@@ -93,6 +94,7 @@ function cacheEls() {
     sort: $('lb-sort'),
     thumbs: $('lb-thumbs'),
     filters: $('lb-filters'),
+    filtersToggle: $('lb-filters-toggle'),
     list: $('lb-list'),
     views: $('lb-views'),
     trash: $('lb-trash'),
@@ -129,6 +131,9 @@ let lbQuery = '';
 let lbSort = 'name';
 let lbThumbs = true;
 let lbImages = false;
+// Twenty-odd chips is a lot of screen to give up when you already know which
+// filter you want. Collapsed by choice, and remembered.
+let lbFiltersOpen = true;
 let lbRecent = [];
 // Paths ticked for a bulk action. Kept as paths rather than indices so it
 // survives re-sorting and re-filtering, which is exactly when you build one up.
@@ -139,7 +144,7 @@ const LB_PREFS_KEY = 'multitool:library';
 function lbSavePrefs() {
   try {
     localStorage.setItem(LB_PREFS_KEY, JSON.stringify({
-      thumbs: lbThumbs, images: lbImages, recent: lbRecent,
+      thumbs: lbThumbs, images: lbImages, recent: lbRecent, filtersOpen: lbFiltersOpen,
     }));
   } catch { /* ignore */ }
 }
@@ -169,6 +174,7 @@ function lbLoadPrefs() {
     if (saved && typeof saved.thumbs === 'boolean') lbThumbs = saved.thumbs;
     if (saved && typeof saved.images === 'boolean') lbImages = saved.images;
     if (saved && Array.isArray(saved.recent)) lbRecent = saved.recent.filter((r) => typeof r === 'string');
+    if (saved && typeof saved.filtersOpen === 'boolean') lbFiltersOpen = saved.filtersOpen;
   } catch { /* keep the default */ }
 }
 
@@ -778,6 +784,18 @@ function lbRenderFilters() {
   }
 
   lb.filters.innerHTML = html;
+  lbSyncFiltersOpen();
+}
+
+// The label carries the state, because a collapsed panel that hides two active
+// filters would make a short list look like a bug.
+function lbSyncFiltersOpen() {
+  lb.filters.hidden = !lbFiltersOpen;
+  const on = lbFilters.size;
+  lb.filtersToggle.textContent = lbFiltersOpen
+    ? `Hide filters${on ? ` (${on} on)` : ''}`
+    : `Filters${on ? ` · ${on} on` : ''}`;
+  lb.filtersToggle.classList.toggle('has-filters', !lbFiltersOpen && on > 0);
 }
 
 
@@ -983,12 +1001,79 @@ function lbShowSheet(thumb, path) {
   img.src = `/api/library/sheet?path=${encodeURIComponent(path)}`;
 }
 
+// Skips, in seconds. Back short and forward long is the shape you want for
+// finding a moment: overshoot cheaply, creep back precisely.
+const SEEK_BACK = 10;
+const SEEK_FWD = 30;
+
+// The file being previewed, so the key handler knows what frame rate to step by.
+let lbPlaying = null;
+
+function lbPlayer() {
+  return document.querySelector('.lb-player');
+}
+
+// A frame is 1/fps of a second, so stepping needs the file's actual rate — a
+// 24fps film and a 60fps capture are not the same nudge. ffprobe gives it to us
+// during the scan; 25 is only the fallback for a file that would not say.
+function lbFrameStep() {
+  const fps = lbPlaying && lbPlaying.fps;
+  return 1 / (fps && fps > 0 ? fps : 25);
+}
+
+function lbSeekBy(seconds) {
+  const el = lbPlayer();
+  if (!el || !Number.isFinite(el.duration)) return;
+  el.currentTime = Math.max(0, Math.min(el.duration, el.currentTime + seconds));
+}
+
+function lbStepFrames(direction) {
+  const el = lbPlayer();
+  if (!el) return;
+  // Stepping while playing just gets overwritten by the next decoded frame.
+  el.pause();
+  const at = el.currentTime + direction * lbFrameStep();
+  el.currentTime = Math.max(0, Number.isFinite(el.duration) ? Math.min(el.duration, at) : at);
+}
+
+function lbTogglePlay() {
+  const el = lbPlayer();
+  if (!el) return;
+  if (el.paused) el.play().catch(() => {});
+  else el.pause();
+}
+
+// Handled at the document because the player is rebuilt each time the modal
+// opens, and only while it is actually on screen.
+function lbPlayerKeys(e) {
+  if (!lbPlaying || !lbPlayer()) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+  const keys = {
+    ArrowLeft: () => lbSeekBy(-SEEK_BACK),
+    ArrowRight: () => lbSeekBy(SEEK_FWD),
+    ',': () => lbStepFrames(-1),
+    '.': () => lbStepFrames(1),
+    ' ': lbTogglePlay,
+    k: lbTogglePlay,
+    j: () => lbSeekBy(-SEEK_BACK),
+    l: () => lbSeekBy(SEEK_FWD),
+  };
+  const act = keys[e.key] || keys[e.key.toLowerCase()];
+  if (!act) return;
+  // Space would scroll the list behind the modal, arrows would move the caret.
+  e.preventDefault();
+  act();
+}
+
 // Clicking a thumbnail plays the file in the shared modal. The server serves
 // byte ranges, so seeking works without downloading the whole thing first.
 function lbPreview(path) {
   const f = lbFiles.find((x) => x.path === path);
   if (!f) return;
   lbHideSheet();
+  lbPlaying = f;
 
   const url = `/api/library/stream?path=${encodeURIComponent(path)}`;
   const media = f.kind === 'audio'
@@ -1005,6 +1090,20 @@ function lbPreview(path) {
       <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
         .filter(Boolean).join(' · '))}</div>
       ${media}
+      ${f.kind === 'video' ? `
+      <div class="lb-transport">
+        <button class="lb-act" type="button" data-frame="-1" title="Previous frame (,)">◀|</button>
+        <button class="lb-act" type="button" data-seek="${-SEEK_BACK}" title="Back ${SEEK_BACK}s (←)">−${SEEK_BACK}s</button>
+        <button class="lb-act lb-play" type="button" data-playpause title="Play/pause (space)">Play / pause</button>
+        <button class="lb-act" type="button" data-seek="${SEEK_FWD}" title="Forward ${SEEK_FWD}s (→)">+${SEEK_FWD}s</button>
+        <button class="lb-act" type="button" data-frame="1" title="Next frame (.)">|▶</button>
+      </div>
+      <div class="lb-keys">
+        <span><kbd>←</kbd> −${SEEK_BACK}s</span>
+        <span><kbd>→</kbd> +${SEEK_FWD}s</span>
+        <span><kbd>,</kbd> <kbd>.</kbd> one frame${f.fps ? ` (${f.fps} fps)` : ' (frame rate unknown — assuming 25)'}</span>
+        <span><kbd>space</kbd> play/pause</span>
+      </div>` : ''}
       <div class="lb-preview-note" id="lb-preview-note" hidden>
         The browser will not play this one — Matroska and some codecs have no
         support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
@@ -1273,6 +1372,12 @@ function bindLibrary() {
 
   lb.images.addEventListener('change', () => { lbImages = lb.images.checked; lbSavePrefs(); });
 
+  lb.filtersToggle.addEventListener('click', () => {
+    lbFiltersOpen = !lbFiltersOpen;
+    lbSavePrefs();
+    lbSyncFiltersOpen();
+  });
+
   lb.thumbs.addEventListener('change', () => {
     lbThumbs = lb.thumbs.checked;
     lbSavePrefs();
@@ -1378,10 +1483,29 @@ function bindLibrary() {
   lb.list.addEventListener('wheel', lbHideSheet, { passive: true });
   window.addEventListener('scroll', lbHideSheet, { passive: true });
 
-  // The modal owns the Open button in the unplayable-codec note.
+  // The modal's own buttons: the Open fallback and the transport.
   document.addEventListener('click', (e) => {
     const modalOpen = e.target.closest('#modal-body [data-open]');
-    if (modalOpen) { lbOpen(modalOpen.dataset.open); closeModal(); }
+    if (modalOpen) { lbOpen(modalOpen.dataset.open); closeModal(); return; }
+
+    const seek = e.target.closest('#modal-body [data-seek]');
+    if (seek) { lbSeekBy(Number(seek.dataset.seek)); return; }
+
+    const frame = e.target.closest('#modal-body [data-frame]');
+    if (frame) { lbStepFrames(Number(frame.dataset.frame)); return; }
+
+    if (e.target.closest('#modal-body [data-playpause]')) lbTogglePlay();
+  });
+
+  document.addEventListener('keydown', lbPlayerKeys);
+
+  // Closing the modal ends playback, so stop answering for a player that has
+  // gone — otherwise the keys keep firing against a detached element.
+  $('modal').addEventListener('click', (e) => {
+    if (e.target.closest('[data-close]')) lbPlaying = null;
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') lbPlaying = null;
   });
 
   lb.list.addEventListener('click', (e) => {

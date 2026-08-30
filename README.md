@@ -262,6 +262,20 @@ pass with an `fps` filter — the filter decodes the entire file, which on a lon
 video is minutes, while seeking to each point is near-instant. Measured at 265ms
 for a two-minute clip, and 1.6ms once cached.
 
+The player has transport controls and keys to match: back 10s and forward 30s
+(overshoot cheaply, creep back precisely), play/pause, and single-frame steps
+in both directions. A frame is 1/fps of a second, so stepping uses the frame
+rate the scan read from that file — a 24fps film and a 60fps capture are not
+the same nudge. Files that would not report one fall back to 25 and say so in
+the legend.
+
+| Key | Does |
+| --- | --- |
+| left / right | back 10s · forward 30s |
+| , and . | one frame back · one frame forward |
+| space or k | play/pause |
+| j and l | same as the arrows |
+
 ### Filters
 
 Filters combine. Picking several ANDs them, so **Same length & size** plus
