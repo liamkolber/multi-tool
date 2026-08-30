@@ -274,7 +274,14 @@ the legend.
 | left / right | back 10s · forward 30s |
 | , and . | one frame back · one frame forward |
 | space or k | play/pause |
+| f | fullscreen |
 | j and l | same as the arrows |
+
+Fullscreen takes the player AND the controls, because the browser’s own
+fullscreen button takes only the video element and leaves everything around it
+behind. That button is turned off and replaced with one that fullscreens the
+whole stage. Escape leaves fullscreen first and closes the preview on a second
+press, rather than doing both at once and losing your place.
 
 ### Filters
 

@@ -108,7 +108,9 @@ document.addEventListener('click', (e) => {
 window.addEventListener('hashchange', () => show(currentRoute()));
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && isModalOpen()) closeModal();
+  // In fullscreen, Escape is the browser leaving fullscreen. Closing the modal
+  // on the same press would dump you back to the list having lost your place.
+  if (e.key === 'Escape' && isModalOpen() && !document.fullscreenElement) closeModal();
 });
 
 $('modal').addEventListener('click', (e) => {

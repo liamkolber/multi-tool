@@ -1036,6 +1036,15 @@ function lbStepFrames(direction) {
   el.currentTime = Math.max(0, Number.isFinite(el.duration) ? Math.min(el.duration, at) : at);
 }
 
+// Fullscreens the stage rather than the video, so the transport and the key
+// legend come along. Escape leaves fullscreen before it closes the modal.
+function lbToggleFullscreen() {
+  const stage = $('lb-stage');
+  if (!stage) return;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else stage.requestFullscreen().catch(() => {});
+}
+
 function lbTogglePlay() {
   const el = lbPlayer();
   if (!el) return;
@@ -1057,6 +1066,7 @@ function lbPlayerKeys(e) {
     '.': () => lbStepFrames(1),
     ' ': lbTogglePlay,
     k: lbTogglePlay,
+    f: lbToggleFullscreen,
     j: () => lbSeekBy(-SEEK_BACK),
     l: () => lbSeekBy(SEEK_FWD),
   };
@@ -1076,9 +1086,13 @@ function lbPreview(path) {
   lbPlaying = f;
 
   const url = `/api/library/stream?path=${encodeURIComponent(path)}`;
+  // controlsList="nofullscreen" removes the browser's own fullscreen button,
+  // which would take the <video> alone and leave the transport behind. Ours
+  // takes the whole stage instead.
   const media = f.kind === 'audio'
     ? `<audio class="lb-player" controls autoplay src="${esc(url)}"></audio>`
-    : `<video class="lb-player" controls autoplay playsinline src="${esc(url)}"></video>`;
+    : `<video class="lb-player" controls autoplay playsinline controlsList="nofullscreen"
+         src="${esc(url)}"></video>`;
 
   // One wrapper, deliberately. .modal-body is a flex row — it was built for the
   // Media Library's poster-beside-text card — so passing siblings turns each of
@@ -1089,6 +1103,7 @@ function lbPreview(path) {
       <h2 class="lb-preview-title">${esc(f.name)}</h2>
       <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
         .filter(Boolean).join(' · '))}</div>
+      <div class="lb-stage" id="lb-stage">
       ${media}
       ${f.kind === 'video' ? `
       <div class="lb-transport">
@@ -1097,13 +1112,16 @@ function lbPreview(path) {
         <button class="lb-act lb-play" type="button" data-playpause title="Play/pause (space)">Play / pause</button>
         <button class="lb-act" type="button" data-seek="${SEEK_FWD}" title="Forward ${SEEK_FWD}s (→)">+${SEEK_FWD}s</button>
         <button class="lb-act" type="button" data-frame="1" title="Next frame (.)">|▶</button>
+        <button class="lb-act" type="button" data-fullscreen title="Fullscreen (f)">⛶</button>
       </div>
       <div class="lb-keys">
         <span><kbd>←</kbd> −${SEEK_BACK}s</span>
         <span><kbd>→</kbd> +${SEEK_FWD}s</span>
         <span><kbd>,</kbd> <kbd>.</kbd> one frame${f.fps ? ` (${f.fps} fps)` : ' (frame rate unknown — assuming 25)'}</span>
         <span><kbd>space</kbd> play/pause</span>
+        <span><kbd>f</kbd> fullscreen</span>
       </div>` : ''}
+      </div>
       <div class="lb-preview-note" id="lb-preview-note" hidden>
         The browser will not play this one — Matroska and some codecs have no
         support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
@@ -1494,7 +1512,8 @@ function bindLibrary() {
     const frame = e.target.closest('#modal-body [data-frame]');
     if (frame) { lbStepFrames(Number(frame.dataset.frame)); return; }
 
-    if (e.target.closest('#modal-body [data-playpause]')) lbTogglePlay();
+    if (e.target.closest('#modal-body [data-playpause]')) { lbTogglePlay(); return; }
+    if (e.target.closest('#modal-body [data-fullscreen]')) lbToggleFullscreen();
   });
 
   document.addEventListener('keydown', lbPlayerKeys);
@@ -1502,10 +1521,14 @@ function bindLibrary() {
   // Closing the modal ends playback, so stop answering for a player that has
   // gone — otherwise the keys keep firing against a detached element.
   $('modal').addEventListener('click', (e) => {
-    if (e.target.closest('[data-close]')) lbPlaying = null;
+    if (!e.target.closest('[data-close]')) return;
+    lbPlaying = null;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') lbPlaying = null;
+    // The browser handles Escape out of fullscreen itself; the preview should
+    // survive that and only close on a second press.
+    if (e.key === 'Escape' && !document.fullscreenElement) lbPlaying = null;
   });
 
   lb.list.addEventListener('click', (e) => {

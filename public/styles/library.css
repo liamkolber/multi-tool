@@ -229,6 +229,30 @@
   background: #000;
   border-radius: 8px;
 }
+/* --- Fullscreen stage --- */
+/* Normally just a wrapper. In fullscreen it becomes the whole screen, with the
+   video taking whatever is left after the controls. */
+.lb-stage:fullscreen,
+.lb-stage:-webkit-full-screen {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  width: 100vw;
+  height: 100vh;
+}
+.lb-stage:fullscreen .lb-player,
+.lb-stage:-webkit-full-screen .lb-player {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  border-radius: 0;
+}
+.lb-stage:fullscreen .lb-transport,
+.lb-stage:-webkit-full-screen .lb-transport { margin: 0; padding: 12px 0 4px; }
+.lb-stage:fullscreen .lb-keys,
+.lb-stage:-webkit-full-screen .lb-keys { margin: 0; padding: 0 0 14px; }
+
 /* --- Transport --- */
 .lb-transport {
   display: flex;
