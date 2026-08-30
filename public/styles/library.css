@@ -284,6 +284,40 @@
 }
 .lb-act:hover { color: var(--text); border-color: var(--text-dim); }
 
+/* --- Bulk selection --- */
+.lb-bulk {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+.lb-bulk-count { font-size: 13.5px; font-weight: 600; flex: 1; min-width: 0; }
+
+.lb-tick {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.lb-tick input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin: 0;
+}
+/* A ticked row should be obvious while scrolling past a few hundred of them. */
+.lb-row.picked { border-color: var(--accent); background: var(--surface-2); }
+
 /* --- Treemap --- */
 .lb-treemap { padding-bottom: 40px; }
 .lb-map-head {

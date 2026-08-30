@@ -191,13 +191,13 @@ function cvRenderBatch() {
     <div class="cv-batch-head">
       <strong>${cvBatch.length} files</strong> from the Library — whichever operation you
       run below is applied to all of them.
-      <button class="ut-x cv-batch-drop" type="button" data-batch-clear title="Back to one file">✕</button>
+      <button class="cv-batch-drop" type="button" data-batch-clear title="Back to one file">✕</button>
     </div>
     <div class="cv-batch-names">${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}</div>
-    <div class="ut-row cv-batch-dest">
-      <label class="dl-check"><input type="radio" name="cv-dest" value="same"
+    <div class="cv-batch-dest">
+      <label><input type="radio" name="cv-dest" value="same"
         ${cvBatchDir ? '' : 'checked'} /> <span>Beside each original</span></label>
-      <label class="dl-check"><input type="radio" name="cv-dest" value="dir"
+      <label><input type="radio" name="cv-dest" value="dir"
         ${cvBatchDir ? 'checked' : ''} /> <span>Into one folder</span></label>
       <button class="btn-ghost" type="button" data-batch-dir>${cvBatchDir ? esc(cvBatchDir) : 'Choose a folder…'}</button>
     </div>
