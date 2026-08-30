@@ -258,7 +258,7 @@ cannot decode Matroska or some codecs; when that happens the player says so and
 offers to hand the file to the external app instead of just showing a black box.
 
 Sheets are built from sixteen fast seeks in one ffmpeg process rather than one
-pass with an  filter — the filter decodes the entire file, which on a long
+pass with an `fps` filter — the filter decodes the entire file, which on a long
 video is minutes, while seeking to each point is near-instant. Measured at 265ms
 for a two-minute clip, and 1.6ms once cached.
 
