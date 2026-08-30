@@ -229,47 +229,111 @@
   background: #000;
   border-radius: 8px;
 }
-/* --- Fullscreen stage --- */
-/* Normally just a wrapper. In fullscreen it becomes the whole screen, with the
-   video taking whatever is left after the controls. */
-.lb-stage:fullscreen,
-.lb-stage:-webkit-full-screen {
-  display: flex;
-  flex-direction: column;
-  background: #000;
-  width: 100vw;
-  height: 100vh;
-}
-.lb-stage:fullscreen .lb-player,
-.lb-stage:-webkit-full-screen .lb-player {
-  flex: 1 1 auto;
-  min-height: 0;
+/* --- Player -------------------------------------------------------------- */
+/* The native controls are gone: they duplicated every button here and their
+   fullscreen took the video element alone, leaving the transport behind. */
+.lb-stage { display: flex; flex-direction: column; }
+
+.lb-screen { position: relative; line-height: 0; }
+.lb-player {
+  display: block;
+  width: 100%;
   height: auto;
-  max-height: none;
-  border-radius: 0;
+  max-height: 62vh;
+  object-fit: contain;
+  background: #000;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
 }
-.lb-stage:fullscreen .lb-transport,
-.lb-stage:-webkit-full-screen .lb-transport { margin: 0; padding: 12px 0 4px; }
-.lb-stage:fullscreen .lb-keys,
-.lb-stage:-webkit-full-screen .lb-keys { margin: 0; padding: 0 0 14px; }
+audio.lb-player { height: 54px; max-height: none; background: transparent; }
+
+/* --- Timeline --- */
+.lb-timeline {
+  position: relative;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;          /* or a drag scrolls the page on a trackpad */
+  background: var(--surface-3);
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+.lb-buffered,
+.lb-played {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  pointer-events: none;
+}
+.lb-buffered { background: rgba(255, 255, 255, 0.14); }
+.lb-played { background: var(--accent); }
+/* A hit area taller than the visible bar: 22px is easy to grab, and the bar
+   itself reads better thinner. */
+.lb-timeline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 8px 0 var(--surface), inset 0 -8px 0 var(--surface);
+  pointer-events: none;
+}
+.lb-timeline:hover .lb-played { box-shadow: 0 0 0 1px var(--accent-hover); }
+
+/* --- Scrub preview --- */
+.lb-scrub {
+  position: absolute;
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  line-height: 1;
+}
+.lb-scrub-img {
+  display: block;
+  border-radius: 4px;
+  background-repeat: no-repeat;
+  background-color: var(--surface-3);
+}
+.lb-scrub-t {
+  display: block;
+  text-align: center;
+  color: var(--text);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 2px 1px;
+}
 
 /* --- Transport --- */
 .lb-transport {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 12px;
+  margin-top: 10px;
 }
-.lb-transport .lb-act { font-variant-numeric: tabular-nums; }
-.lb-play { min-width: 110px; }
+.lb-icon {
+  min-width: 38px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.lb-time {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.lb-volume {
+  flex: 0 0 96px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 
 .lb-keys {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
+  gap: 14px;
   flex-wrap: wrap;
   margin-top: 10px;
   color: var(--text-dim);
@@ -286,6 +350,35 @@
   font-size: 11px;
   color: var(--text);
 }
+
+/* --- Fullscreen --- */
+/* The stage becomes the screen, and the video takes whatever the controls do
+   not. Without min-height: 0 the video refuses to shrink and pushes the
+   transport off the bottom edge. */
+.lb-stage:fullscreen,
+.lb-stage:-webkit-full-screen {
+  background: #000;
+  width: 100vw;
+  height: 100vh;
+  padding: 0 16px 10px;
+}
+.lb-stage:fullscreen .lb-screen,
+.lb-stage:-webkit-full-screen .lb-screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lb-stage:fullscreen .lb-player,
+.lb-stage:-webkit-full-screen .lb-player {
+  max-height: 100%;
+  height: 100%;
+  width: 100%;
+  border-radius: 0;
+}
+.lb-stage:fullscreen .lb-timeline,
+.lb-stage:-webkit-full-screen .lb-timeline { border-radius: 8px; margin-top: 8px; }
 
 .lb-preview-note {
   color: var(--text-dim);

@@ -275,6 +275,17 @@ the legend.
 | , and . | one frame back · one frame forward |
 | space or k | play/pause |
 | f | fullscreen |
+| m | mute |
+
+The player is built here rather than being the browser default one. Native
+controls duplicated every button in the transport and their fullscreen took the
+video element alone, leaving the controls behind on the page underneath — two
+play buttons and two fullscreen buttons is worse than either on its own.
+
+Hovering the timeline shows the frame at that point. A storyboard sheet is
+built on the first preview — one frame roughly every five seconds, tiled into a
+single image — so which frame appears is a background offset rather than a
+request per hover. Dragging scrubs, and the preview follows.
 | j and l | same as the arrows |
 
 Fullscreen takes the player AND the controls, because the browser’s own

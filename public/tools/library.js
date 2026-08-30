@@ -1006,43 +1006,51 @@ function lbShowSheet(thumb, path) {
 const SEEK_BACK = 10;
 const SEEK_FWD = 30;
 
-// The file being previewed, so the key handler knows what frame rate to step by.
+// The file being previewed, its storyboard, and whether the timeline is being
+// dragged. Held here rather than on the element because the player is rebuilt
+// every time the modal opens.
 let lbPlaying = null;
+let lbBoard = null;
+let lbDragging = false;
 
-function lbPlayer() {
-  return document.querySelector('.lb-player');
+const lbPlayer = () => document.querySelector('.lb-player');
+
+function lbTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return '0:00';
+  const s = Math.floor(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  return h
+    ? h + ':' + String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0')
+    : m + ':' + String(r).padStart(2, '0');
 }
 
 // A frame is 1/fps of a second, so stepping needs the file's actual rate — a
-// 24fps film and a 60fps capture are not the same nudge. ffprobe gives it to us
-// during the scan; 25 is only the fallback for a file that would not say.
+// 24fps film and a 60fps capture are not the same nudge. The scan reads it;
+// 25 is only the fallback for a file that would not say.
 function lbFrameStep() {
   const fps = lbPlaying && lbPlaying.fps;
   return 1 / (fps && fps > 0 ? fps : 25);
 }
 
-function lbSeekBy(seconds) {
+function lbSeekTo(seconds) {
   const el = lbPlayer();
   if (!el || !Number.isFinite(el.duration)) return;
-  el.currentTime = Math.max(0, Math.min(el.duration, el.currentTime + seconds));
+  el.currentTime = Math.max(0, Math.min(el.duration, seconds));
+}
+
+function lbSeekBy(seconds) {
+  const el = lbPlayer();
+  if (el) lbSeekTo(el.currentTime + seconds);
 }
 
 function lbStepFrames(direction) {
   const el = lbPlayer();
   if (!el) return;
-  // Stepping while playing just gets overwritten by the next decoded frame.
+  // Stepping while playing is immediately overwritten by the next decoded frame.
   el.pause();
-  const at = el.currentTime + direction * lbFrameStep();
-  el.currentTime = Math.max(0, Number.isFinite(el.duration) ? Math.min(el.duration, at) : at);
-}
-
-// Fullscreens the stage rather than the video, so the transport and the key
-// legend come along. Escape leaves fullscreen before it closes the modal.
-function lbToggleFullscreen() {
-  const stage = $('lb-stage');
-  if (!stage) return;
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  else stage.requestFullscreen().catch(() => {});
+  lbSeekTo(el.currentTime + direction * lbFrameStep());
 }
 
 function lbTogglePlay() {
@@ -1050,6 +1058,117 @@ function lbTogglePlay() {
   if (!el) return;
   if (el.paused) el.play().catch(() => {});
   else el.pause();
+}
+
+// Fullscreens the stage rather than the video, so the controls come along.
+function lbToggleFullscreen() {
+  const stage = $('lb-stage');
+  if (!stage) return;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else stage.requestFullscreen().catch(() => {});
+}
+
+// --- Timeline ----------------------------------------------------------------
+function lbSyncPlayer() {
+  const el = lbPlayer();
+  if (!el) return;
+
+  const dur = Number.isFinite(el.duration) ? el.duration : 0;
+  const pct = dur ? (el.currentTime / dur) * 100 : 0;
+
+  const played = $('lb-played');
+  if (played) played.style.width = pct + '%';
+
+  const time = $('lb-time');
+  if (time) time.textContent = lbTime(el.currentTime) + ' / ' + lbTime(dur);
+
+  const play = $('lb-playpause');
+  if (play) {
+    play.textContent = el.paused ? '▶' : '⏸';
+    play.title = (el.paused ? 'Play' : 'Pause') + ' (space)';
+  }
+
+  // Buffered is drawn from the range holding the playhead, which is the one
+  // that means anything — a file seeked around in has several.
+  const buf = $('lb-buffered');
+  if (buf && dur) {
+    let ahead = el.currentTime;
+    for (let i = 0; i < el.buffered.length; i++) {
+      if (el.buffered.start(i) <= el.currentTime && el.currentTime <= el.buffered.end(i)) {
+        ahead = el.buffered.end(i);
+        break;
+      }
+    }
+    buf.style.width = Math.min(100, (ahead / dur) * 100) + '%';
+  }
+}
+
+// Where along the timeline a pointer is, as a fraction.
+function lbTimelineFraction(e) {
+  const line = $('lb-timeline');
+  if (!line) return 0;
+  const box = line.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
+}
+
+// Puts the storyboard tile for a given time under the cursor. The sheet is one
+// image; which frame shows is a background offset, so there is no request per
+// hover.
+function lbShowScrub(e) {
+  const el = lbPlayer();
+  const box = $('lb-scrub');
+  if (!el || !box || !Number.isFinite(el.duration)) return;
+
+  const frac = lbTimelineFraction(e);
+  const at = frac * el.duration;
+
+  const label = $('lb-scrub-t');
+  if (label) label.textContent = lbTime(at);
+
+  const img = $('lb-scrub-img');
+  if (img && lbBoard) {
+    const i = Math.max(0, Math.min(lbBoard.count - 1, Math.floor(at / lbBoard.interval)));
+    const col = i % lbBoard.cols;
+    const row = Math.floor(i / lbBoard.cols);
+    img.style.width = lbBoard.tileW + 'px';
+    img.style.height = lbBoard.tileH + 'px';
+    img.style.backgroundImage = 'url("' + lbBoard.src + '")';
+    img.style.backgroundSize = (lbBoard.cols * lbBoard.tileW) + 'px ' + (lbBoard.rows * lbBoard.tileH) + 'px';
+    img.style.backgroundPosition = '-' + (col * lbBoard.tileW) + 'px -' + (row * lbBoard.tileH) + 'px';
+    img.hidden = false;
+  } else if (img) {
+    img.hidden = true;
+  }
+
+  // Clamped to the stage so the preview never hangs off the edge.
+  const stage = $('lb-stage');
+  const line = $('lb-timeline');
+  if (stage && line) {
+    const sBox = stage.getBoundingClientRect();
+    const lBox = line.getBoundingClientRect();
+    const width = box.offsetWidth || (lbBoard ? lbBoard.tileW : 120);
+    let left = (lBox.left - sBox.left) + frac * lBox.width - width / 2;
+    left = Math.max(4, Math.min(sBox.width - width - 4, left));
+    box.style.left = left + 'px';
+    box.style.bottom = (sBox.bottom - lBox.top + 10) + 'px';
+  }
+  box.hidden = false;
+}
+
+function lbHideScrub() {
+  const box = $('lb-scrub');
+  if (box) box.hidden = true;
+}
+
+// Fetched once per preview, and only for video — the metadata comes back
+// immediately, the image builds on first request and is cached after.
+async function lbLoadBoard(path) {
+  lbBoard = null;
+  try {
+    const res = await fetch('/api/library/board?path=' + encodeURIComponent(path));
+    const json = await res.json();
+    if (json.status === 'ok') lbBoard = json.data;
+  } catch { /* the scrubber still shows a timestamp without it */ }
 }
 
 // Handled at the document because the player is rebuilt each time the modal
@@ -1066,15 +1185,71 @@ function lbPlayerKeys(e) {
     '.': () => lbStepFrames(1),
     ' ': lbTogglePlay,
     k: lbTogglePlay,
-    f: lbToggleFullscreen,
     j: () => lbSeekBy(-SEEK_BACK),
     l: () => lbSeekBy(SEEK_FWD),
+    f: lbToggleFullscreen,
+    m: () => { const el = lbPlayer(); if (el) el.muted = !el.muted; },
   };
   const act = keys[e.key] || keys[e.key.toLowerCase()];
   if (!act) return;
-  // Space would scroll the list behind the modal, arrows would move the caret.
+  // Space would scroll the list behind the modal; arrows would move the caret.
   e.preventDefault();
   act();
+}
+
+// Everything that has to be attached to the elements showModal just created.
+function lbBindPlayer() {
+  const el = lbPlayer();
+  if (!el) return;
+
+  for (const ev of ['timeupdate', 'play', 'pause', 'seeked', 'loadedmetadata', 'progress', 'durationchange']) {
+    el.addEventListener(ev, lbSyncPlayer);
+  }
+  el.addEventListener('error', () => {
+    const note = $('lb-preview-note');
+    if (note) note.hidden = false;
+  });
+
+  const screen = $('lb-screen');
+  if (screen) {
+    screen.addEventListener('click', (e) => { if (e.target === el) lbTogglePlay(); });
+    screen.addEventListener('dblclick', (e) => { if (e.target === el) lbToggleFullscreen(); });
+  }
+
+  const line = $('lb-timeline');
+  if (line) {
+    // Pointer events rather than mouse ones, so a drag that leaves the bar
+    // keeps scrubbing until the button comes up.
+    line.addEventListener('pointerdown', (e) => {
+      lbDragging = true;
+      line.setPointerCapture(e.pointerId);
+      const dur = lbPlayer() ? lbPlayer().duration : 0;
+      if (Number.isFinite(dur)) lbSeekTo(lbTimelineFraction(e) * dur);
+      lbShowScrub(e);
+    });
+    line.addEventListener('pointermove', (e) => {
+      lbShowScrub(e);
+      if (!lbDragging) return;
+      const dur = lbPlayer() ? lbPlayer().duration : 0;
+      if (Number.isFinite(dur)) lbSeekTo(lbTimelineFraction(e) * dur);
+    });
+    line.addEventListener('pointerup', (e) => {
+      lbDragging = false;
+      try { line.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+    });
+    line.addEventListener('pointerleave', () => { if (!lbDragging) lbHideScrub(); });
+  }
+
+  const vol = $('lb-volume');
+  if (vol) {
+    vol.value = String(el.volume);
+    vol.addEventListener('input', () => {
+      el.volume = Number(vol.value);
+      el.muted = el.volume === 0;
+    });
+  }
+
+  lbSyncPlayer();
 }
 
 // Clicking a thumbnail plays the file in the shared modal. The server serves
@@ -1084,59 +1259,74 @@ function lbPreview(path) {
   if (!f) return;
   lbHideSheet();
   lbPlaying = f;
+  lbBoard = null;
 
-  const url = `/api/library/stream?path=${encodeURIComponent(path)}`;
-  // controlsList="nofullscreen" removes the browser's own fullscreen button,
-  // which would take the <video> alone and leave the transport behind. Ours
-  // takes the whole stage instead.
-  const media = f.kind === 'audio'
-    ? `<audio class="lb-player" controls autoplay src="${esc(url)}"></audio>`
-    : `<video class="lb-player" controls autoplay playsinline controlsList="nofullscreen"
-         src="${esc(url)}"></video>`;
+  const url = '/api/library/stream?path=' + encodeURIComponent(path);
+  const isVideo = f.kind !== 'audio';
 
-  // One wrapper, deliberately. .modal-body is a flex row — it was built for the
-  // Media Library's poster-beside-text card — so passing siblings turns each of
-  // them into a column: the title rendered one letter per line and the video
-  // pushed the card off the screen.
-  showModal(`
-    <div class="lb-preview">
-      <h2 class="lb-preview-title">${esc(f.name)}</h2>
-      <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
-        .filter(Boolean).join(' · '))}</div>
-      <div class="lb-stage" id="lb-stage">
-      ${media}
-      ${f.kind === 'video' ? `
-      <div class="lb-transport">
-        <button class="lb-act" type="button" data-frame="-1" title="Previous frame (,)">◀|</button>
-        <button class="lb-act" type="button" data-seek="${-SEEK_BACK}" title="Back ${SEEK_BACK}s (←)">−${SEEK_BACK}s</button>
-        <button class="lb-act lb-play" type="button" data-playpause title="Play/pause (space)">Play / pause</button>
-        <button class="lb-act" type="button" data-seek="${SEEK_FWD}" title="Forward ${SEEK_FWD}s (→)">+${SEEK_FWD}s</button>
-        <button class="lb-act" type="button" data-frame="1" title="Next frame (.)">|▶</button>
-        <button class="lb-act" type="button" data-fullscreen title="Fullscreen (f)">⛶</button>
-      </div>
-      <div class="lb-keys">
-        <span><kbd>←</kbd> −${SEEK_BACK}s</span>
-        <span><kbd>→</kbd> +${SEEK_FWD}s</span>
-        <span><kbd>,</kbd> <kbd>.</kbd> one frame${f.fps ? ` (${f.fps} fps)` : ' (frame rate unknown — assuming 25)'}</span>
-        <span><kbd>space</kbd> play/pause</span>
-        <span><kbd>f</kbd> fullscreen</span>
-      </div>` : ''}
-      </div>
-      <div class="lb-preview-note" id="lb-preview-note" hidden>
-        The browser will not play this one — Matroska and some codecs have no
-        support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
-      </div>
-    </div>`);
+  // No "controls" attribute: the native set duplicates every button below it,
+  // and its fullscreen takes the video alone. That duplication is the whole
+  // reason for building a transport rather than decorating the browser's.
+  const media = isVideo
+    ? '<video class="lb-player" autoplay playsinline src="' + esc(url) + '"></video>'
+    : '<audio class="lb-player" autoplay src="' + esc(url) + '"></audio>';
 
-  // A codec the browser cannot decode fails silently otherwise: black box, no
-  // error, no explanation.
-  const el = document.querySelector('.lb-player');
-  if (el) {
-    el.addEventListener('error', () => {
-      const note = $('lb-preview-note');
-      if (note) note.hidden = false;
-    });
-  }
+  const meta = [lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
+    .filter(Boolean).join(' · ');
+
+  // One wrapper. .modal-body is a flex row — built for the Media Library's
+  // poster-beside-text card — so siblings become columns.
+  showModal(
+    '<div class="lb-preview">'
+    + '<h2 class="lb-preview-title">' + esc(f.name) + '</h2>'
+    + '<div class="lb-preview-meta">' + esc(meta) + '</div>'
+    + '<div class="lb-stage" id="lb-stage">'
+    + '<div class="lb-screen" id="lb-screen">'
+    + media
+    + '<div class="lb-scrub" id="lb-scrub" hidden>'
+    + '<div class="lb-scrub-img" id="lb-scrub-img"></div>'
+    + '<span class="lb-scrub-t" id="lb-scrub-t"></span>'
+    + '</div>'
+    + '</div>'
+    + '<div class="lb-timeline" id="lb-timeline" title="Click or drag to seek">'
+    + '<div class="lb-buffered" id="lb-buffered"></div>'
+    + '<div class="lb-played" id="lb-played"></div>'
+    + '</div>'
+    + '<div class="lb-transport">'
+    + '<button class="lb-act lb-icon" type="button" id="lb-playpause" data-playpause title="Play (space)">▶</button>'
+    + '<button class="lb-act" type="button" data-seek="' + (-SEEK_BACK) + '" title="Back ' + SEEK_BACK + 's (←)">−' + SEEK_BACK + 's</button>'
+    + '<button class="lb-act" type="button" data-seek="' + SEEK_FWD + '" title="Forward ' + SEEK_FWD + 's (→)">+' + SEEK_FWD + 's</button>'
+    + (isVideo
+      ? '<button class="lb-act lb-icon" type="button" data-frame="-1" title="Previous frame (,)">◀|</button>'
+        + '<button class="lb-act lb-icon" type="button" data-frame="1" title="Next frame (.)">|▶</button>'
+      : '')
+    + '<span class="lb-time" id="lb-time">0:00 / 0:00</span>'
+    + '<input class="lb-volume" id="lb-volume" type="range" min="0" max="1" step="0.05" title="Volume (m to mute)" />'
+    + (isVideo
+      ? '<button class="lb-act lb-icon" type="button" data-fullscreen title="Fullscreen (f)">⛶</button>'
+      : '')
+    + '</div>'
+    + '<div class="lb-keys">'
+    + '<span><kbd>←</kbd> −' + SEEK_BACK + 's</span>'
+    + '<span><kbd>→</kbd> +' + SEEK_FWD + 's</span>'
+    + (isVideo
+      ? '<span><kbd>,</kbd> <kbd>.</kbd> one frame'
+        + (f.fps ? ' (' + f.fps + ' fps)' : ' (rate unknown — assuming 25)') + '</span>'
+      : '')
+    + '<span><kbd>space</kbd> play/pause</span>'
+    + '<span><kbd>m</kbd> mute</span>'
+    + (isVideo ? '<span><kbd>f</kbd> fullscreen</span>' : '')
+    + '</div>'
+    + '</div>'
+    + '<div class="lb-preview-note" id="lb-preview-note" hidden>'
+    + 'The browser will not play this one — Matroska and some codecs have no support in Chromium. '
+    + '<button class="lb-act" type="button" data-open="' + esc(path) + '">Open it externally</button>'
+    + '</div>'
+    + '</div>',
+  );
+
+  lbBindPlayer();
+  if (isVideo) lbLoadBoard(path);
 }
 
 // Deleted files stay listed until dismissed, so an accident is one click to
