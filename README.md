@@ -289,6 +289,18 @@ Rows load a chunk at a time as you reach the end of the list. A fixed cap meant
 a thousand duplicates you could never scroll to, and rendering all of them up
 front means tens of thousands of DOM nodes before you have looked at one.
 
+### Treemap
+
+A third view, where area is disk space. The scan already computed a recursive
+size for every folder, so this renders numbers that already exist rather than
+doing new work. Click a block to go into it; the breadcrumb comes back out.
+Blocks show one level of nesting inside them as texture, which is the
+difference between a treemap and a bar chart.
+
+The layout splits the list where the running total passes half, then divides
+the rectangle along its longer side. Always taking the longer side is what
+keeps tiles from degenerating into slivers.
+
 ### Deleting
 
 **Delete** moves the file to the **Recycle Bin**. Never straight off the disk —

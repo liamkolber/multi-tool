@@ -284,6 +284,57 @@
 }
 .lb-act:hover { color: var(--text); border-color: var(--text-dim); }
 
+/* --- Treemap --- */
+.lb-treemap { padding-bottom: 40px; }
+.lb-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.lb-crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.lb-crumb {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 5px;
+}
+.lb-crumb:hover { color: var(--accent-hover); text-decoration: underline; }
+.lb-crumb.active { color: var(--text); cursor: default; text-decoration: none; }
+.lb-crumb-sep { color: var(--text-dim); font-size: 12px; }
+.lb-map-total { color: var(--text-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.lb-map-svg {
+  width: 100%;
+  height: 520px;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.lb-map-tile[data-map] { cursor: pointer; }
+.lb-map-tile[data-map]:hover rect { filter: brightness(1.35); }
+.lb-map-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.lb-map-sub { fill: rgba(255, 255, 255, 0.65); font-size: 11px; pointer-events: none; }
+/* Nested children, drawn as texture rather than as anything clickable. */
+.lb-map-inner {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+.lb-map-hint { color: var(--text-dim); font-size: 12.5px; margin-top: 10px; }
+
 /* --- Views and folder rows --- */
 .lb-views { display: flex; gap: 6px; margin-bottom: 14px; }
 

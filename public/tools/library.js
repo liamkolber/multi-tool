@@ -33,6 +33,7 @@ const TEMPLATE = `
   <div id="lb-views" class="lb-views" hidden>
     <button class="lb-chip active" type="button" data-view="files">Files</button>
     <button class="lb-chip" type="button" data-view="folders">Folders</button>
+    <button class="lb-chip" type="button" data-view="treemap">Treemap</button>
   </div>
 
   <div id="lb-controls" class="lb-controls" hidden>
@@ -71,7 +72,8 @@ const TEMPLATE = `
   <div id="lb-sheet" class="lb-sheet" hidden></div>
 
   <div id="lb-list" class="lb-list"></div>
-  <div id="lb-folders" class="lb-list" hidden></div>`;
+  <div id="lb-folders" class="lb-list" hidden></div>
+  <div id="lb-treemap" class="lb-treemap" hidden></div>`;
 
 const lb = {};
 function cacheEls() {
@@ -100,6 +102,7 @@ function cacheEls() {
     fdTop: $('lb-fd-top'),
     folders: $('lb-folders'),
     sheet: $('lb-sheet'),
+    treemap: $('lb-treemap'),
   });
 }
 
@@ -555,7 +558,9 @@ function lbShowView(view) {
   lb.list.hidden = view !== 'files';
   lb.fdControls.hidden = view !== 'folders';
   lb.folders.hidden = view !== 'folders';
+  lb.treemap.hidden = view !== 'treemap';
   if (view === 'folders') lbRenderFolders();
+  else if (view === 'treemap') lbRenderTreemap();
   else lbRenderList();
 }
 
@@ -571,6 +576,143 @@ function lbReclaimable() {
     total += d.groupWaste || 0;
   }
   return total;
+}
+
+// --- Treemap -----------------------------------------------------------------
+// Area is disk space. The scan already computed a recursive size for every
+// folder, so this is a rendering of numbers we have rather than new work.
+
+let lbMapAt = ''; // which folder is filling the frame, '' meaning the root
+
+// Rebuilds the parent/child structure the flat folder list implies.
+function lbTree() {
+  const byRel = new Map();
+  for (const f of lbFolders) byRel.set(f.rel, { ...f, children: [] });
+
+  for (const node of byRel.values()) {
+    if (!node.rel) continue;
+    const cut = Math.max(node.rel.lastIndexOf('\\'), node.rel.lastIndexOf('/'));
+    const parentRel = cut < 0 ? '' : node.rel.slice(0, cut);
+    const parent = byRel.get(parentRel);
+    if (parent) parent.children.push(node);
+  }
+  return byRel;
+}
+
+// A binary treemap: split the list where the running total passes half, then
+// divide the rectangle along its LONGER side. Always splitting the long side is
+// what keeps tiles from degenerating into slivers, which is the whole problem
+// with the naive slice-and-dice version.
+function lbLayout(items, x, y, w, h, out, depth) {
+  if (!items.length || w <= 0 || h <= 0) return;
+  if (items.length === 1) {
+    out.push({ item: items[0], x, y, w, h, depth });
+    return;
+  }
+
+  const total = items.reduce((n, i) => n + i.value, 0);
+  if (total <= 0) return;
+
+  let acc = 0;
+  let split = 0;
+  while (split < items.length - 1 && acc + items[split].value <= total / 2) {
+    acc += items[split].value;
+    split++;
+  }
+
+  // The first item alone can be more than half the total — a folder where one
+  // child holds most of the space, which is the normal case rather than an edge
+  // one. Without this the head is empty, the tail is the untouched input, and it
+  // recurses until the stack goes.
+  if (split === 0) split = 1;
+
+  const head = items.slice(0, split);
+  const tail = items.slice(split);
+  const frac = head.reduce((n, i) => n + i.value, 0) / total;
+
+  if (w >= h) {
+    lbLayout(head, x, y, w * frac, h, out, depth);
+    lbLayout(tail, x + w * frac, y, w * (1 - frac), h, out, depth);
+  } else {
+    lbLayout(head, x, y, w, h * frac, out, depth);
+    lbLayout(tail, x, y + h * frac, w, h * (1 - frac), out, depth);
+  }
+}
+
+// Children of a folder, plus whatever sits loose in it, as layout items.
+function lbMapItems(node) {
+  const items = node.children
+    .filter((c) => c.size > 0)
+    .map((c) => ({ value: c.size, node: c, label: c.name }))
+    .sort((a, b) => b.value - a.value);
+
+  if (node.ownSize > 0) {
+    items.push({ value: node.ownSize, node: null, label: `${fmtNumber(node.ownFiles)} files here` });
+  }
+  return items.sort((a, b) => b.value - a.value);
+}
+
+function lbRenderTreemap() {
+  const tree = lbTree();
+  const node = tree.get(lbMapAt) || tree.get('');
+  if (!node) {
+    lb.treemap.innerHTML = '<div class="lb-empty">Scan a folder first.</div>';
+    return;
+  }
+
+  const W = Math.max(320, lb.treemap.clientWidth || 900);
+  const H = 520;
+  const tiles = [];
+  lbLayout(lbMapItems(node), 0, 0, W, H, tiles, 0);
+
+  // One level of nesting inside each tile gives the map its texture — without
+  // it a treemap is a bar chart with extra steps.
+  const inner = [];
+  for (const t of tiles) {
+    if (!t.item.node || t.w < 40 || t.h < 40) continue;
+    const kids = lbMapItems(t.item.node);
+    if (kids.length < 2) continue;
+    lbLayout(kids, t.x + 3, t.y + 3, t.w - 6, t.h - 6, inner, 1);
+  }
+
+  const esc2 = (s) => esc(String(s));
+  const rects = tiles.map((t, i) => {
+    const rel = t.item.node ? t.item.node.rel : '';
+    const hue = 210 + ((i * 37) % 60);
+    const label = t.w > 70 && t.h > 26
+      ? `<text class="lb-map-label" x="${t.x + 7}" y="${t.y + 17}">${esc2(t.item.label)}</text>
+         <text class="lb-map-sub" x="${t.x + 7}" y="${t.y + 32}">${esc2(lbBytes(t.item.value))}</text>`
+      : '';
+    return `<g class="lb-map-tile"${rel ? ` data-map="${esc2(rel)}"` : ''}>
+      <title>${esc2(t.item.label)} — ${esc2(lbBytes(t.item.value))}</title>
+      <rect x="${t.x}" y="${t.y}" width="${Math.max(0, t.w - 2)}" height="${Math.max(0, t.h - 2)}"
+        fill="hsl(${hue} 45% 28%)" stroke="hsl(${hue} 45% 40%)" rx="4" />
+      ${label}
+    </g>`;
+  }).join('');
+
+  const nested = inner.map((t) => `<rect class="lb-map-inner" x="${t.x}" y="${t.y}"
+    width="${Math.max(0, t.w - 1)}" height="${Math.max(0, t.h - 1)}" rx="2" />`).join('');
+
+  // Breadcrumb, so drilling in is reversible.
+  const crumbs = [''];
+  if (node.rel) {
+    const parts = node.rel.split(/[\\/]/);
+    for (let i = 1; i <= parts.length; i++) crumbs.push(parts.slice(0, i).join('\\'));
+  }
+  const trail = crumbs.map((rel, i) => `<button class="lb-crumb${rel === node.rel ? ' active' : ''}"
+      type="button" data-map="${esc2(rel)}">${esc2(rel ? rel.split(/[\\/]/).pop() : (lbRoot || 'root'))}</button>`)
+    .join('<span class="lb-crumb-sep">›</span>');
+
+  lb.treemap.innerHTML = `
+    <div class="lb-map-head">
+      <div class="lb-crumbs">${trail}</div>
+      <span class="lb-map-total">${esc2(lbBytes(node.size))} · ${fmtNumber(node.files)} files</span>
+    </div>
+    <svg class="lb-map-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
+      ${rects}${nested}
+    </svg>
+    <div class="lb-map-hint">Click a block to go into it. Blocks are sized by what they hold, including everything nested inside.</div>`;
 }
 
 // --- Rendering ---
@@ -1119,6 +1261,13 @@ function bindLibrary() {
   }, 120));
 
   lb.fdSort.addEventListener('change', () => { lbFdSort = lb.fdSort.value; lbRenderFolders(); });
+
+  lb.treemap.addEventListener('click', (e) => {
+    const tile = e.target.closest('[data-map]');
+    if (!tile) return;
+    lbMapAt = tile.dataset.map;
+    lbRenderTreemap();
+  });
   lb.fdTop.addEventListener('change', () => { lbFdTop = lb.fdTop.checked; lbRenderFolders(); });
 
   lb.folders.addEventListener('click', (e) => {
