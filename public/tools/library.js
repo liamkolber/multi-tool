@@ -995,14 +995,20 @@ function lbPreview(path) {
     ? `<audio class="lb-player" controls autoplay src="${esc(url)}"></audio>`
     : `<video class="lb-player" controls autoplay playsinline src="${esc(url)}"></video>`;
 
+  // One wrapper, deliberately. .modal-body is a flex row — it was built for the
+  // Media Library's poster-beside-text card — so passing siblings turns each of
+  // them into a column: the title rendered one letter per line and the video
+  // pushed the card off the screen.
   showModal(`
-    <h2 class="lb-preview-title">${esc(f.name)}</h2>
-    <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
-      .filter(Boolean).join(' · '))}</div>
-    ${media}
-    <div class="lb-preview-note" id="lb-preview-note" hidden>
-      The browser will not play this one — Matroska and some codecs have no
-      support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
+    <div class="lb-preview">
+      <h2 class="lb-preview-title">${esc(f.name)}</h2>
+      <div class="lb-preview-meta">${esc([lbBytes(f.size), lbClock(f.duration), lbResLabel(f), f.vcodec]
+        .filter(Boolean).join(' · '))}</div>
+      ${media}
+      <div class="lb-preview-note" id="lb-preview-note" hidden>
+        The browser will not play this one — Matroska and some codecs have no
+        support in Chromium. <button class="lb-act" type="button" data-open="${esc(path)}">Open it externally</button>
+      </div>
     </div>`);
 
   // A codec the browser cannot decode fails silently otherwise: black box, no

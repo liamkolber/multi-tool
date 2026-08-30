@@ -40,6 +40,10 @@ export function optionHtml(value, label, selected) {
 
 // --- Shared modal (markup lives in the shell, so any tool can use it) ---
 
+// Pass ONE root element. .modal-body is a flex row (the Media Library's detail
+// card puts a poster beside its text), so several siblings become several
+// columns rather than a stack — which looks like a rendering bug, not a layout
+// choice, and is exactly how the Library's preview first shipped.
 export function showModal(html) {
   const modal = $('modal');
   modal.hidden = false;
