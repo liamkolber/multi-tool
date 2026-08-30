@@ -23,6 +23,8 @@ const TEMPLATE = `
     <button id="cv-load" class="btn-ghost" type="button">Load</button>
   </div>
 
+  <div id="cv-batch" class="cv-batch" hidden></div>
+
   <div id="cv-error" class="cv-notice error" hidden></div>
   <div id="cv-file" class="cv-file" hidden></div>
   <div id="cv-ops" class="cv-ops"></div>
@@ -41,6 +43,7 @@ function cacheEls() {
     load: $('cv-load'),
     tools: $('cv-tools'),
     error: $('cv-error'),
+    batch: $('cv-batch'),
     file: $('cv-file'),
     ops: $('cv-ops'),
     jobs: $('cv-jobs'),
@@ -54,7 +57,13 @@ let cvFile = null;     // last successful probe
 let cvStream = null;
 const cvJobs = new Map();
 
-const CV_LIVE = new Set(['picking', 'starting', 'running']);
+// When a batch is loaded, every operation applies to all of these instead of to
+// the one probed file. The probe still happens — on the first file — because it
+// is what decides which operations are even offered.
+let cvBatch = null;
+let cvBatchDir = null;   // null means "beside each original"
+
+const CV_LIVE = new Set(['picking', 'queued', 'starting', 'running']);
 
 // --- Operation fields -------------------------------------------------------
 // type: select | number | text. `when` hides a field unless another field has
@@ -168,6 +177,57 @@ function cvRenderTools() {
   cv.tools.hidden = false;
   cv.tools.className = `cv-notice ${cvTools.ffmpeg.found ? 'warn' : 'error'}`;
   cv.tools.innerHTML = `${body} <button class="link-inline" type="button" data-cv-recheck>Re-check</button>`;
+}
+
+// --- Batch -------------------------------------------------------------------
+function cvRenderBatch() {
+  if (!cvBatch) { cv.batch.hidden = true; cv.batch.innerHTML = ''; return; }
+
+  const shown = cvBatch.slice(0, 6).map((p) => esc(p.split(/[\\/]/).pop()));
+  const rest = cvBatch.length - shown.length;
+
+  cv.batch.hidden = false;
+  cv.batch.innerHTML = `
+    <div class="cv-batch-head">
+      <strong>${cvBatch.length} files</strong> from the Library — whichever operation you
+      run below is applied to all of them.
+      <button class="ut-x cv-batch-drop" type="button" data-batch-clear title="Back to one file">✕</button>
+    </div>
+    <div class="cv-batch-names">${shown.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}</div>
+    <div class="ut-row cv-batch-dest">
+      <label class="dl-check"><input type="radio" name="cv-dest" value="same"
+        ${cvBatchDir ? '' : 'checked'} /> <span>Beside each original</span></label>
+      <label class="dl-check"><input type="radio" name="cv-dest" value="dir"
+        ${cvBatchDir ? 'checked' : ''} /> <span>Into one folder</span></label>
+      <button class="btn-ghost" type="button" data-batch-dir>${cvBatchDir ? esc(cvBatchDir) : 'Choose a folder…'}</button>
+    </div>
+    <div class="cv-batch-note">Two run at a time; the rest queue.</div>`;
+}
+
+async function cvLoadBatch(paths) {
+  cvBatch = paths;
+  cvBatchDir = null;
+  cvClearError();
+  cvRenderBatch();
+
+  // The first file decides which operations are on offer. A mixed selection is
+  // the caller's problem — anything the operation does not suit is refused by
+  // the server per file rather than silently mangled.
+  cv.path.value = paths[0];
+  await cvLoadPath();
+}
+
+async function cvPickBatchDir() {
+  try {
+    const res = await fetch('/api/convert/pickdir', { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') return cvShowError(json.status_message || 'Could not open the folder dialog.');
+    if (json.data.cancelled) return;
+    cvBatchDir = json.data.dir;
+    cvRenderBatch();
+  } catch {
+    cvShowError('Could not reach the server.');
+  }
 }
 
 // --- Loading a file ---
@@ -304,13 +364,13 @@ function cvCollect(card) {
 }
 
 // --- Jobs ---
-async function cvStart(opId, opts, input, retryOf) {
+async function cvStart(opId, opts, input, retryOf, dest) {
   cvClearError();
   try {
     const res = await fetch('/api/convert/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, op: opId, opts, ...(retryOf ? { retryOf } : {}) }),
+      body: JSON.stringify({ input, op: opId, opts, ...(retryOf ? { retryOf } : {}), ...(dest || {}) }),
     });
     const json = await res.json();
     if (json.status !== 'ok') {
@@ -343,6 +403,7 @@ function cvRetry(id) {
 
 function cvJobState(j) {
   if (j.status === 'running') return j.duration ? `${j.pct.toFixed(1)}%` : 'Working…';
+  if (j.status === 'queued') return 'Queued';
   if (j.status === 'picking') return 'Choose a location…';
   if (j.status === 'starting') return 'Starting…';
   if (j.status === 'done') return 'Done';
@@ -435,11 +496,44 @@ function bindConverter() {
     if (card) cvApplyConditions(card);
   });
 
-  cv.ops.addEventListener('click', (e) => {
+  cv.ops.addEventListener('click', async (e) => {
     const run = e.target.closest('[data-cv-run]');
     if (!run || !cvFile) return;
     const card = run.closest('.cv-op');
-    cvStart(run.dataset.cvRun, cvCollect(card), cvFile.path);
+    const opts = cvCollect(card);
+
+    if (!cvBatch) {
+      cvStart(run.dataset.cvRun, opts, cvFile.path);
+      return;
+    }
+
+    // One request per file. The server queues them, so this is a burst of
+    // cheap POSTs rather than a burst of ffmpeg processes.
+    run.disabled = true;
+    const label = run.textContent;
+    for (let i = 0; i < cvBatch.length; i++) {
+      run.textContent = `Queuing ${i + 1}/${cvBatch.length}…`;
+      await cvStart(run.dataset.cvRun, opts, cvBatch[i], null,
+        cvBatchDir ? { outDir: cvBatchDir } : { sameFolder: true });
+    }
+    run.textContent = label;
+    run.disabled = false;
+  });
+
+  cv.batch.addEventListener('click', (e) => {
+    if (e.target.closest('[data-batch-clear]')) {
+      cvBatch = null;
+      cvBatchDir = null;
+      cvRenderBatch();
+      return;
+    }
+    if (e.target.closest('[data-batch-dir]')) cvPickBatchDir();
+  });
+
+  cv.batch.addEventListener('change', (e) => {
+    if (e.target.name !== 'cv-dest') return;
+    if (e.target.value === 'same') { cvBatchDir = null; cvRenderBatch(); }
+    else if (!cvBatchDir) cvPickBatchDir();
   });
 
   cv.jobs.addEventListener('click', (e) => {
@@ -476,6 +570,19 @@ export const tool = {
     // importing this module: panels mount lazily, so it may well fire before
     // this tool exists. Reading it here — after mount, on every show — catches
     // it either way.
+    // A batch handed over from the Library takes precedence over a single file.
+    let batch = null;
+    try {
+      const raw = sessionStorage.getItem('multitool:convert-batch');
+      if (raw) {
+        sessionStorage.removeItem('multitool:convert-batch');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) batch = parsed;
+      }
+    } catch { /* private mode, or a half-written value */ }
+
+    if (batch) { cvLoadBatch(batch); return; }
+
     let handed = null;
     try {
       handed = sessionStorage.getItem('multitool:convert-path');

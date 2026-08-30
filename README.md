@@ -289,6 +289,22 @@ Rows load a chunk at a time as you reach the end of the list. A fixed cap meant
 a thousand duplicates you could never scroll to, and rendering all of them up
 front means tens of thousands of DOM nodes before you have looked at one.
 
+### Converting in bulk
+
+Tick rows in the Library — or **Select all showing**, which takes everything the
+current filters and search leave rather than only the rows drawn so far — and
+hand the selection to the Converter. It opens with the batch loaded, probes the
+first file to decide which operations to offer, and applies whichever one you
+run to all of them.
+
+Results go **beside each original** or **into one folder**. Converting an MP4 to
+an MP4 beside itself would land on its own input, so that case gets
+`name (converted).ext` rather than failing four hundred times in a row.
+
+Two run at a time and the rest queue. Four hundred at once would thrash the disk
+and leave every one of them crawling; two finishes the batch sooner and keeps
+the machine usable. A queued job can be cancelled before it starts.
+
 ### Treemap
 
 A third view, where area is disk space. The scan already computed a recursive

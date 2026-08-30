@@ -69,6 +69,8 @@ const TEMPLATE = `
     sizes, running times, resolutions, subtitles and duplicates.
   </div>
 
+  <div id="lb-bulk" class="lb-bulk" hidden></div>
+
   <div id="lb-sheet" class="lb-sheet" hidden></div>
 
   <div id="lb-list" class="lb-list"></div>
@@ -103,6 +105,7 @@ function cacheEls() {
     folders: $('lb-folders'),
     sheet: $('lb-sheet'),
     treemap: $('lb-treemap'),
+    bulk: $('lb-bulk'),
   });
 }
 
@@ -127,6 +130,9 @@ let lbSort = 'name';
 let lbThumbs = true;
 let lbImages = false;
 let lbRecent = [];
+// Paths ticked for a bulk action. Kept as paths rather than indices so it
+// survives re-sorting and re-filtering, which is exactly when you build one up.
+const lbSelected = new Set();
 
 const LB_PREFS_KEY = 'multitool:library';
 
@@ -817,7 +823,10 @@ function lbRowHtml(f, prev, next) {
   const joinUp = grouped && idOf(prev) === dupe.groupId ? ' set-cont' : '';
   const joinDown = grouped && idOf(next) === dupe.groupId ? ' set-open' : '';
 
-  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}${band}${joinUp}${joinDown}">
+  const ticked = lbSelected.has(f.path);
+
+  return `<div class="lb-row${f.unreadable ? ' bad' : ''}${reason ? ' dupe' : ''}${band}${joinUp}${joinDown}${ticked ? ' picked' : ''}">
+    <label class="lb-tick"><input type="checkbox" data-tick="${esc(f.path)}"${ticked ? ' checked' : ''} /></label>
     ${thumb}
     <div class="lb-row-main">
       <div class="lb-row-name" title="${esc(f.path)}">${esc(f.name)}</div>
@@ -898,6 +907,32 @@ function lbRenderList() {
   lbWatchMore(rows.length);
 }
 
+
+// --- Bulk selection ----------------------------------------------------------
+function lbRenderBulk() {
+  if (!lbSelected.size) { lb.bulk.hidden = true; lb.bulk.innerHTML = ''; return; }
+
+  const bytes = lbFiles.filter((f) => lbSelected.has(f.path)).reduce((n, f) => n + (f.size || 0), 0);
+  lb.bulk.hidden = false;
+  lb.bulk.innerHTML = `
+    <span class="lb-bulk-count">${fmtNumber(lbSelected.size)} selected · ${esc(lbBytes(bytes))}</span>
+    <button class="lb-act" type="button" data-bulk="convert">Convert these…</button>
+    <button class="lb-act" type="button" data-bulk="all">Select all showing</button>
+    <button class="lb-act" type="button" data-bulk="clear">Clear</button>`;
+}
+
+// Hands the selection to the Converter, the same way a single row does.
+function lbConvertSelected() {
+  const paths = lbFiles.filter((f) => lbSelected.has(f.path)).map((f) => f.path);
+  if (!paths.length) return;
+  try {
+    sessionStorage.setItem('multitool:convert-batch', JSON.stringify(paths));
+  } catch {
+    lbShowError('Could not hand that many files over — try a smaller selection.');
+    return;
+  }
+  location.hash = '#/convert';
+}
 
 // --- Preview -----------------------------------------------------------------
 // Hovering a thumbnail shows a contact sheet: sixteen frames from across the
@@ -1029,6 +1064,7 @@ function lbRenderAll() {
   lb.views.hidden = empty;
   lb.blank.hidden = !empty;
   lbRenderTrash();
+  lbRenderBulk();
   lbRenderStats();
   lbRenderFilters();
   lbShowView(lbView);
@@ -1262,6 +1298,22 @@ function bindLibrary() {
 
   lb.fdSort.addEventListener('change', () => { lbFdSort = lb.fdSort.value; lbRenderFolders(); });
 
+  lb.bulk.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-bulk]');
+    if (!btn) return;
+    if (btn.dataset.bulk === 'clear') { lbSelected.clear(); lbRenderBulk(); lbRenderList(); return; }
+    if (btn.dataset.bulk === 'all') {
+      // Everything the current filters and search leave, not just the rows
+      // rendered so far — the chunked list would otherwise select an arbitrary
+      // prefix of what you are looking at.
+      for (const f of lbVisible()) lbSelected.add(f.path);
+      lbRenderBulk();
+      lbRenderList();
+      return;
+    }
+    if (btn.dataset.bulk === 'convert') lbConvertSelected();
+  });
+
   lb.treemap.addEventListener('click', (e) => {
     const tile = e.target.closest('[data-map]');
     if (!tile) return;
@@ -1327,6 +1379,16 @@ function bindLibrary() {
   });
 
   lb.list.addEventListener('click', (e) => {
+    const tick = e.target.closest('[data-tick]');
+    if (tick) {
+      const path = tick.dataset.tick;
+      if (tick.checked) lbSelected.add(path);
+      else lbSelected.delete(path);
+      tick.closest('.lb-row').classList.toggle('picked', tick.checked);
+      lbRenderBulk();
+      return;
+    }
+
     const preview = e.target.closest('[data-preview]');
     if (preview) { lbPreview(preview.dataset.preview); return; }
 
