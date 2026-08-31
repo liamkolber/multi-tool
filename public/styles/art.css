@@ -146,3 +146,24 @@
   transition: color 0.15s, border-color 0.15s;
 }
 .ar-open:hover { color: var(--text); border-color: var(--accent); }
+
+/* --- Rating filter chips --- */
+.ar-ratings { display: flex; gap: 6px; flex-wrap: wrap; }
+.ar-chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 12px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ar-chip:hover { color: var(--text); border-color: var(--text-dim); }
+.ar-chip.on { color: var(--text); border-color: var(--accent); background: var(--surface-2); }
+
+/* The header holds a title, the rating chips, the sorts and a close button —
+   let it wrap on a narrow window rather than crushing the title. */
+.ar-head { flex-wrap: wrap; }
+.ar-titles { flex: 1 1 180px; }

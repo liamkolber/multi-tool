@@ -22,6 +22,9 @@ function arEnsureRoot() {
     const sortBtn = e.target.closest('[data-ar-sort]');
     if (sortBtn) return arSetSort(sortBtn.dataset.arSort);
 
+    const rating = e.target.closest('[data-ar-rating]');
+    if (rating) return arToggleRating(rating.dataset.arRating);
+
     const pick = e.target.closest('[data-ar-tag]');
     if (pick) return arRun(pick.dataset.arTag);
 
@@ -46,6 +49,19 @@ function arClose() {
   arState = null;
 }
 
+// One toggle per rating the server permits. The list comes from the server
+// rather than being hardcoded, so narrowing ALLOWED_RATINGS removes the toggle
+// too and the UI can never offer something the gate would drop anyway.
+function arRatingsHtml() {
+  const s = arState;
+  if (!s.allowed || !s.allowed.length) return '';
+  const on = new Set(s.ratings || []);
+  return `<div class="ar-ratings">${s.allowed.map((r) => `
+    <button class="ar-chip${on.has(r.value) ? ' on' : ''}" type="button"
+      data-ar-rating="${esc(r.value)}" aria-pressed="${on.has(r.value)}"
+      title="${esc(r.means || r.label)}">${esc(r.label)}</button>`).join('')}</div>`;
+}
+
 function arShell(body) {
   const s = arState || {};
   const sort = s.sort || 'score';
@@ -56,6 +72,7 @@ function arShell(body) {
           <h2 class="ar-title">${esc(s.name || 'Artwork')}</h2>
           ${s.tag ? `<span class="ar-tag-name">${esc(s.tag)}</span>` : ''}
         </div>
+        ${arRatingsHtml()}
         <div class="ar-sorts">
           <button class="ar-btn${sort === 'score' ? ' on' : ''}" type="button" data-ar-sort="score">Top</button>
           <button class="ar-btn${sort === 'new' ? ' on' : ''}" type="button" data-ar-sort="new">Newest</button>
@@ -88,23 +105,39 @@ function arCardHtml(p) {
     </a>`;
 }
 
+// Reads back the live selection rather than asserting a fixed rating, which
+// is how the footer came to claim "general-rated only" while serving more.
+function arRatingNames() {
+  const s = arState;
+  if (!s.allowed || !s.ratings) return 'Filtered';
+  const on = s.allowed.filter((r) => s.ratings.includes(r.value)).map((r) => r.label);
+  return on.length ? on.join(' + ') : 'No';
+}
+
 function arGridHtml() {
   const s = arState;
   if (!s.posts.length) {
-    return arNote('No general-rated artwork for this character.');
+    return arNote(`No ${arRatingNames().toLowerCase()} artwork for this character.`);
   }
   return `
     <div class="ar-grid">${s.posts.map(arCardHtml).join('')}</div>
     ${s.hasNext ? '<div class="ar-more"><button class="ar-btn" type="button" data-ar-more>Load more</button></div>' : ''}
-    ${arNote('General-rated artwork only, filtered on the server. Opens on Danbooru.', 'soft')}`;
+    ${arNote(`${arRatingNames()} artwork, filtered on the server. Opens on Danbooru.`, 'soft')}`;
 }
 
 async function arFetch(page) {
   const s = arState;
   const q = new URLSearchParams({ tag: s.tag, page: String(page), sort: s.sort });
+  if (s.ratings && s.ratings.length) q.set('ratings', s.ratings.join(','));
+
   const res = await fetch(`/api/art/search?${q}`);
   const json = await res.json();
   if (json.status !== 'ok') throw new Error(json.status_message || 'Could not load artwork.');
+
+  // The server decides what is permitted and what is on; the client follows,
+  // so an out-of-range selection corrects itself rather than sticking.
+  s.allowed = json.data.allowed;
+  s.ratings = json.data.ratings;
   return json.data;
 }
 
@@ -141,6 +174,24 @@ async function arMore() {
     s.hasNext = d.hasNext;
     arRender(arGridHtml());
   } catch { /* the grid already on screen stays valid */ }
+}
+
+// Multi-select. Turning the last one off would ask the server for nothing,
+// which it answers with the full permitted set — so it is refused here instead
+// of silently showing more than was asked for.
+function arToggleRating(value) {
+  const s = arState;
+  if (!s || !s.allowed) return;
+  const on = new Set(s.ratings || []);
+  if (on.has(value)) {
+    if (on.size === 1) return;
+    on.delete(value);
+  } else {
+    on.add(value);
+  }
+  // Keep the server's own order so the chips do not shuffle as you click.
+  s.ratings = s.allowed.map((r) => r.value).filter((v) => on.has(v));
+  arRun(s.tag);
 }
 
 function arSetSort(sort) {
