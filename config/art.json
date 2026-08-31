@@ -1,0 +1,28 @@
+{
+  "//": [
+    "Live configuration for the character art tool.",
+    "",
+    "Edit and save — the running app picks it up on the next request, with no",
+    "restart. Reload the overlay to see it.",
+    "",
+    "enabled — which Danbooru ratings to serve:",
+    "  g  General       no nudity, nothing suggestive",
+    "  s  Sensitive     swimsuits, underwear, revealing outfits - not pornographic",
+    "  q  Questionable  partial nudity, strong suggestion, no explicit acts",
+    "  e  Explicit      pornographic",
+    "These are exact buckets, not levels: [\"s\"] serves ONLY sensitive and",
+    "excludes general. To widen, add a letter rather than swapping it.",
+    "",
+    "blockedTags — extra tags to drop on sight, added to the built-in list in",
+    "art.mjs. This ADDS to that list and cannot remove from it; the built-in",
+    "entries are the ones keeping this away from sexualised art of characters",
+    "who are minors, so taking one out is a deliberate code edit. Names are",
+    "normalised, so \"Cow Print\" and cow_print are the same thing.",
+    "",
+    "If this file is missing, unparseable, or lists nothing valid, the app keeps",
+    "the last good value and falls back to [\"g\"] with the built-in denylist on",
+    "a cold start - it never fails open to something more permissive."
+  ],
+  "enabled": ["g", "s", "q", "e"],
+  "blockedTags": []
+}
