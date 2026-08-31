@@ -30,9 +30,13 @@ function arEnsureRoot() {
     const view = e.target.closest('[data-ar-view]');
     if (view) return arOpenViewer(Number(view.dataset.arView));
 
-    // Clicking the backdrop of the viewer closes it without closing the sheet.
+    // Clicking the backdrop closes the viewer without closing the sheet. The
+    // exclusion is the image itself, not its container: .ar-stage is a centred
+    // flex box filling the whole middle of the screen, so nearly all the black
+    // around a portrait-shaped picture belongs to it and excluding it meant
+    // there was almost nowhere left to click.
     const viewer = e.target.closest('[data-ar-viewer]');
-    if (viewer && !e.target.closest('.ar-stage, .ar-viewer-bar, .ar-nav')) return arCloseViewer();
+    if (viewer && !e.target.closest('.ar-full, .ar-viewer-bar, .ar-nav')) return arCloseViewer();
 
     const rating = e.target.closest('[data-ar-rating]');
     if (rating) return arToggleRating(rating.dataset.arRating);

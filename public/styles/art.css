@@ -265,3 +265,9 @@
 .ar-nav:hover { color: #fff; }
 .ar-nav.prev { grid-column: 1; }
 .ar-nav.next { grid-column: 3; }
+
+/* Clicking the surround dismisses; the picture itself does not. */
+.ar-viewer { cursor: zoom-out; }
+.ar-full { cursor: default; }
+.ar-viewer-bar, .ar-nav { cursor: default; }
+.ar-nav, .ar-viewer-bar button, .ar-viewer-bar a { cursor: pointer; }
