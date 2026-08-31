@@ -22,13 +22,35 @@ function arEnsureRoot() {
     const sortBtn = e.target.closest('[data-ar-sort]');
     if (sortBtn) return arSetSort(sortBtn.dataset.arSort);
 
+    if (e.target.closest('[data-ar-viewer-close]')) return arCloseViewer();
+
+    const step = e.target.closest('[data-ar-step]');
+    if (step) return arStep(Number(step.dataset.arStep));
+
+    const view = e.target.closest('[data-ar-view]');
+    if (view) return arOpenViewer(Number(view.dataset.arView));
+
+    // Clicking the backdrop of the viewer closes it without closing the sheet.
+    const viewer = e.target.closest('[data-ar-viewer]');
+    if (viewer && !e.target.closest('.ar-stage, .ar-viewer-bar, .ar-nav')) return arCloseViewer();
+
     const rating = e.target.closest('[data-ar-rating]');
     if (rating) return arToggleRating(rating.dataset.arRating);
 
     const pick = e.target.closest('[data-ar-tag]');
-    if (pick) return arRun(pick.dataset.arTag);
+    if (pick) return arRun(pick.dataset.arTag, { fresh: true });
 
     if (e.target.closest('[data-ar-more]')) return arMore();
+  });
+
+  // Double-click a rating to use only that one. It works because the fetch is
+  // debounced: the two single clicks and the dblclick all land inside the
+  // window, so the intermediate states never reach the network.
+  arRoot.addEventListener('dblclick', (e) => {
+    const rating = e.target.closest('[data-ar-rating]');
+    if (!rating) return;
+    e.preventDefault();
+    arSoloRating(rating.dataset.arRating);
   });
 
   return arRoot;
@@ -36,10 +58,19 @@ function arEnsureRoot() {
 
 // Escape closes the art overlay before the detail modal underneath sees it.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && arRoot && !arRoot.hidden && !document.fullscreenElement) {
+  if (!arRoot || arRoot.hidden || document.fullscreenElement) return;
+  const inViewer = arState && arState.viewing >= 0;
+
+  if (e.key === 'Escape') {
     e.stopImmediatePropagation();
-    arClose();
+    // Escape backs out one layer at a time: viewer, then sheet, then the
+    // detail modal underneath gets its turn on the next press.
+    return inViewer ? arCloseViewer() : arClose();
   }
+
+  if (!inViewer) return;
+  if (e.key === 'ArrowLeft') { e.stopImmediatePropagation(); arStep(-1); }
+  if (e.key === 'ArrowRight') { e.stopImmediatePropagation(); arStep(1); }
 }, true);
 
 function arClose() {
@@ -59,7 +90,8 @@ function arRatingsHtml() {
   return `<div class="ar-ratings">${s.allowed.map((r) => `
     <button class="ar-chip${on.has(r.value) ? ' on' : ''}" type="button"
       data-ar-rating="${esc(r.value)}" aria-pressed="${on.has(r.value)}"
-      title="${esc(r.means || r.label)}">${esc(r.label)}</button>`).join('')}</div>`;
+      title="${esc(r.means || r.label)}&#10;Click to toggle · double-click for only this"
+      >${esc(r.label)}</button>`).join('')}</div>`;
 }
 
 function arShell(body) {
@@ -88,21 +120,115 @@ function arRender(body) {
   arRoot.hidden = false;
 }
 
+// Marks the sheet busy without replacing what is on it. Re-rendering into a
+// "Loading…" string collapsed the sheet to the height of one line and threw
+// away the grid, which made every filter click a jarring full reset.
+function arSetBusy(on) {
+  const sheet = arRoot && arRoot.querySelector('.ar-sheet');
+  if (sheet) sheet.classList.toggle('busy', !!on);
+}
+
 function arNote(text, kind) {
   return `<p class="ar-note${kind ? ` ${kind}` : ''}">${esc(text)}</p>`;
 }
 
-function arCardHtml(p) {
+function arCardHtml(p, i) {
   const dims = p.width && p.height ? `${p.width}×${p.height}` : '';
   return `
-    <a class="ar-card" href="${esc(p.post)}" target="_blank" rel="noopener noreferrer"
-       title="${esc(p.artist ? `by ${p.artist}` : 'View on Danbooru')}">
+    <button class="ar-card" type="button" data-ar-view="${i}"
+       title="${esc(p.artist ? `by ${p.artist}` : 'Open')}">
       <img src="${esc(p.preview)}" alt="" loading="lazy" />
       <span class="ar-card-meta">
         ${p.artist ? `<span class="ar-artist">${esc(p.artist)}</span>` : ''}
         <span class="ar-dims">${esc(dims)}</span>
       </span>
-    </a>`;
+    </button>`;
+}
+
+const arBytes = (n) => {
+  if (!n) return '';
+  const mb = n / 1048576;
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
+};
+
+// The viewer. Shows the sample immediately and swaps in the original once it
+// has decoded, so there is a picture on screen straight away rather than a
+// blank frame while a 12 MB png arrives. Some posts have no original at all,
+// in which case the sample is the best there is and it says so.
+function arViewerHtml() {
+  const s = arState;
+  const p = s.posts[s.viewing];
+  if (!p) return '';
+  const dims = p.width && p.height ? `${p.width} × ${p.height}` : '';
+  const size = arBytes(p.bytes);
+
+  return `
+    <div class="ar-viewer" data-ar-viewer>
+      <div class="ar-viewer-bar">
+        <span class="ar-viewer-pos">${s.viewing + 1} / ${s.posts.length}</span>
+        ${p.artist ? `<span class="ar-viewer-artist">${esc(p.artist)}</span>` : ''}
+        <span class="ar-viewer-dims">${esc(dims)}${size ? ` · ${size}` : ''}</span>
+        <span class="ar-viewer-quality" data-ar-quality>${p.full ? 'loading original…' : 'sample only'}</span>
+        <a class="ar-btn" href="${esc(p.post)}" target="_blank" rel="noopener noreferrer">Danbooru</a>
+        <button class="ar-close" type="button" data-ar-viewer-close aria-label="Close">✕</button>
+      </div>
+      <button class="ar-nav prev" type="button" data-ar-step="-1" aria-label="Previous">‹</button>
+      <div class="ar-stage">
+        <img class="ar-full" data-ar-full src="${esc(p.large || p.preview)}" alt="" />
+      </div>
+      <button class="ar-nav next" type="button" data-ar-step="1" aria-label="Next">›</button>
+    </div>`;
+}
+
+// Swapping only after the original has decoded avoids the flash of a
+// half-painted image replacing a complete one.
+function arUpgradeImage() {
+  const s = arState;
+  const p = s && s.posts[s.viewing];
+  const el = arRoot && arRoot.querySelector('[data-ar-full]');
+  const badge = arRoot && arRoot.querySelector('[data-ar-quality]');
+  if (!p || !el || !p.full) return;
+
+  const token = s.viewing;
+  const hi = new Image();
+  hi.onload = () => {
+    if (!arState || arState.viewing !== token) return;
+    const live = arRoot.querySelector('[data-ar-full]');
+    if (live) live.src = p.full;
+    const b = arRoot.querySelector('[data-ar-quality]');
+    if (b) b.textContent = 'original';
+  };
+  hi.onerror = () => {
+    if (!arState || arState.viewing !== token) return;
+    const b = arRoot.querySelector('[data-ar-quality]');
+    if (b) b.textContent = 'sample';
+  };
+  hi.src = p.full;
+  if (badge) badge.textContent = 'loading original…';
+}
+
+function arOpenViewer(index) {
+  const s = arState;
+  if (!s || !s.posts[index]) return;
+  s.viewing = index;
+  const existing = arRoot.querySelector('[data-ar-viewer]');
+  if (existing) existing.outerHTML = arViewerHtml();
+  else arRoot.insertAdjacentHTML('beforeend', arViewerHtml());
+  arUpgradeImage();
+}
+
+function arCloseViewer() {
+  const el = arRoot && arRoot.querySelector('[data-ar-viewer]');
+  if (el) el.remove();
+  if (arState) arState.viewing = -1;
+}
+
+function arStep(delta) {
+  const s = arState;
+  if (!s || s.viewing < 0) return;
+  const next = s.viewing + delta;
+  if (next < 0 || next >= s.posts.length) return;
+  arOpenViewer(next);
 }
 
 // Reads back the live selection rather than asserting a fixed rating, which
@@ -141,13 +267,22 @@ async function arFetch(page) {
   return json.data;
 }
 
-async function arRun(tag) {
+// Keeps whatever is already on screen until the replacement is ready, so the
+// grid does not blink out and the sheet does not resize under the pointer.
+// Only a first load, which has nothing to keep, renders the waiting state.
+async function arRun(tag, opts = {}) {
   const s = arState;
+  const hadContent = s.posts.length > 0 && !opts.fresh;
   s.tag = tag;
   s.page = 1;
-  s.posts = [];
   s.hasNext = false;
-  arRender('<div class="ar-wait">Loading artwork…</div>');
+
+  if (hadContent) {
+    arSetBusy(true);
+  } else {
+    s.posts = [];
+    arRender('<div class="ar-wait">Loading artwork…</div>');
+  }
 
   const token = ++s.seq;
   try {
@@ -155,11 +290,25 @@ async function arRun(tag) {
     if (token !== s.seq) return;
     s.posts = d.posts;
     s.hasNext = d.hasNext;
+    s.viewing = -1;
     arRender(arGridHtml());
   } catch (err) {
     if (token !== s.seq) return;
-    arRender(arNote(err.message, 'error'));
+    arSetBusy(false);
+    if (!hadContent) arRender(arNote(err.message, 'error'));
+    else arSetError(err.message);
   }
+}
+
+// A failure after a successful load leaves the previous grid in place rather
+// than trading real results for an error page.
+function arSetError(message) {
+  const body = arRoot && arRoot.querySelector('.ar-body');
+  if (!body) return;
+  const old = body.querySelector('.ar-inline-error');
+  if (old) old.remove();
+  body.insertAdjacentHTML('afterbegin',
+    `<p class="ar-note error ar-inline-error">${esc(message)}</p>`);
 }
 
 async function arMore() {
@@ -170,10 +319,47 @@ async function arMore() {
     const d = await arFetch(s.page + 1);
     if (token !== s.seq) return;
     s.page += 1;
-    s.posts = s.posts.concat(d.posts);
     s.hasNext = d.hasNext;
-    arRender(arGridHtml());
+
+    const grid = arRoot.querySelector('.ar-grid');
+    if (!grid) {
+      s.posts = s.posts.concat(d.posts);
+      arRender(arGridHtml());
+      return;
+    }
+
+    // Append rather than re-render, so the page does not jump back to the top.
+    // Indices continue from the current length or the viewer would open the
+    // wrong picture.
+    const start = s.posts.length;
+    s.posts = s.posts.concat(d.posts);
+    grid.insertAdjacentHTML('beforeend',
+      d.posts.map((p, i) => arCardHtml(p, start + i)).join(''));
+
+    if (!s.hasNext) {
+      const more = arRoot.querySelector('.ar-more');
+      if (more) more.remove();
+    }
   } catch { /* the grid already on screen stays valid */ }
+}
+
+// Chips repaint immediately; the request waits. Clicking three chips in a row
+// then costs one fetch instead of three, and it is what lets double-click mean
+// something different from two single clicks.
+const AR_FETCH_DELAY = 320;
+let arFetchTimer = null;
+
+function arApplyRatings(next) {
+  const s = arState;
+  // Keep the server's own order so the chips do not shuffle as you click.
+  s.ratings = s.allowed.map((r) => r.value).filter((v) => next.has(v));
+
+  const chips = arRoot && arRoot.querySelector('.ar-ratings');
+  if (chips) chips.outerHTML = arRatingsHtml();
+
+  clearTimeout(arFetchTimer);
+  arSetBusy(true);
+  arFetchTimer = setTimeout(() => arRun(s.tag), AR_FETCH_DELAY);
 }
 
 // Multi-select. Turning the last one off would ask the server for nothing,
@@ -189,9 +375,18 @@ function arToggleRating(value) {
   } else {
     on.add(value);
   }
-  // Keep the server's own order so the chips do not shuffle as you click.
-  s.ratings = s.allowed.map((r) => r.value).filter((v) => on.has(v));
-  arRun(s.tag);
+  arApplyRatings(on);
+}
+
+// Double-click: only this one. Doing it again restores everything permitted,
+// so the same gesture goes both ways rather than stranding you on one chip.
+function arSoloRating(value) {
+  const s = arState;
+  if (!s || !s.allowed) return;
+  const alone = s.ratings.length === 1 && s.ratings[0] === value;
+  arApplyRatings(alone
+    ? new Set(s.allowed.map((r) => r.value))
+    : new Set([value]));
 }
 
 function arSetSort(sort) {
@@ -224,7 +419,11 @@ export function artButton(name, series = []) {
  * @param {string[]} series title(s) of the work, English and romaji if both
  */
 export async function openArt(name, series = []) {
-  arState = { name, series, tag: null, sort: 'score', page: 1, posts: [], hasNext: false, seq: 0 };
+  arState = {
+    name, series, tag: null, sort: 'score',
+    page: 1, posts: [], hasNext: false, seq: 0,
+    viewing: -1,
+  };
   arRender('<div class="ar-wait">Finding this character…</div>');
 
   const q = new URLSearchParams({ name });
