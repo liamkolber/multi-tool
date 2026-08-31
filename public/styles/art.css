@@ -271,3 +271,57 @@
 .ar-full { cursor: default; }
 .ar-viewer-bar, .ar-nav { cursor: default; }
 .ar-nav, .ar-viewer-bar button, .ar-viewer-bar a { cursor: pointer; }
+
+/* --- Extra tag filter --- */
+.ar-filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.ar-extra-input {
+  flex: 1 1 220px;
+  min-width: 160px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  outline: none;
+}
+.ar-extra-input:focus { border-color: var(--accent); }
+.ar-extra-input::placeholder { color: var(--text-dim); }
+
+/* The artist in the viewer bar filters; the arrow beside it leaves. */
+button.ar-viewer-artist {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+button.ar-viewer-artist:hover { color: var(--accent); background: rgba(255, 255, 255, 0.07); }
+
+.ar-viewer-out {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+.ar-viewer-out:hover { color: var(--text); }
+
+/* Top sorting cannot apply while an extra tag is set — shown as unavailable
+   rather than hidden, so the reason is discoverable from its tooltip. */
+.ar-btn.off { opacity: 0.4; }

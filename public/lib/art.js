@@ -22,6 +22,15 @@ function arEnsureRoot() {
     const sortBtn = e.target.closest('[data-ar-sort]');
     if (sortBtn) return arSetSort(sortBtn.dataset.arSort);
 
+    if (e.target.closest('[data-ar-extra-clear]')) return arSetExtra('');
+
+    const by = e.target.closest('[data-ar-by]');
+    if (by) {
+      // Close the viewer first: the grid behind it is about to be replaced.
+      arCloseViewer();
+      return arSetExtra(by.dataset.arBy);
+    }
+
     if (e.target.closest('[data-ar-viewer-close]')) return arCloseViewer();
 
     const step = e.target.closest('[data-ar-step]');
@@ -50,6 +59,15 @@ function arEnsureRoot() {
   // Double-click a rating to use only that one. It works because the fetch is
   // debounced: the two single clicks and the dblclick all land inside the
   // window, so the intermediate states never reach the network.
+  arRoot.addEventListener('keydown', (e) => {
+    const input = e.target.closest('[data-ar-extra]');
+    if (!input) return;
+    // The overlay's own Escape handler would close the sheet; here it should
+    // only give up on the box.
+    if (e.key === 'Escape') { e.stopPropagation(); input.blur(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); arSetExtra(input.value); }
+  });
+
   arRoot.addEventListener('dblclick', (e) => {
     const rating = e.target.closest('[data-ar-rating]');
     if (!rating) return;
@@ -63,6 +81,9 @@ function arEnsureRoot() {
 // Escape closes the art overlay before the detail modal underneath sees it.
 document.addEventListener('keydown', (e) => {
   if (!arRoot || arRoot.hidden || document.fullscreenElement) return;
+  // Typing in the filter box: arrows move the caret and Escape clears the box,
+  // neither of which should reach the sheet.
+  if (e.target && e.target.closest && e.target.closest('[data-ar-extra]')) return;
   const inViewer = arState && arState.viewing >= 0;
 
   if (e.key === 'Escape') {
@@ -110,12 +131,32 @@ function arShell(body) {
         </div>
         ${arRatingsHtml()}
         <div class="ar-sorts">
-          <button class="ar-btn${sort === 'score' ? ' on' : ''}" type="button" data-ar-sort="score">Top</button>
+          <button class="ar-btn${sort === 'score' ? ' on' : ''}${s.sortLocked ? ' off' : ''}"
+            type="button" data-ar-sort="score" title="${s.sortLocked
+    ? 'Unavailable with an extra tag: Danbooru allows two search terms, and the extra tag uses the slot sorting needs'
+    : 'Highest scoring first'}">Top</button>
           <button class="ar-btn${sort === 'new' ? ' on' : ''}" type="button" data-ar-sort="new">Newest</button>
         </div>
         <button class="ar-close" type="button" data-ar-close aria-label="Close">✕</button>
       </header>
+      ${arFilterBarHtml()}
       <div class="ar-body">${body}</div>
+    </div>`;
+}
+
+// One extra tag, because Danbooru allows an anonymous search two and the
+// character has already spent one. Artists are ordinary tags over there, so
+// the same field covers "only anal" and "only by this artist".
+function arFilterBarHtml() {
+  const s = arState || {};
+  return `
+    <div class="ar-filterbar">
+      <input class="ar-extra-input" type="search" data-ar-extra
+        placeholder="Also tagged… (a theme, or an artist)"
+        value="${esc(s.extra || '')}" autocomplete="off" spellcheck="false"
+        aria-label="Narrow by one more tag" />
+      ${s.extra ? `<button class="ar-chip on" type="button" data-ar-extra-clear
+        title="Remove this filter">${esc(s.extra)} ✕</button>` : ''}
     </div>`;
 }
 
@@ -149,6 +190,8 @@ function arCardHtml(p, i) {
     </button>`;
 }
 
+const DANBOORU_POSTS = 'https://danbooru.donmai.us/posts';
+
 const arBytes = (n) => {
   if (!n) return '';
   const mb = n / 1048576;
@@ -170,7 +213,13 @@ function arViewerHtml() {
     <div class="ar-viewer" data-ar-viewer>
       <div class="ar-viewer-bar">
         <span class="ar-viewer-pos">${s.viewing + 1} / ${s.posts.length}</span>
-        ${p.artist ? `<span class="ar-viewer-artist">${esc(p.artist)}</span>` : ''}
+        ${p.artist ? `
+          <button class="ar-viewer-artist" type="button" data-ar-by="${esc(p.artist)}"
+            title="Show only this artist">${esc(p.artist)}</button>
+          <a class="ar-viewer-out" href="${esc(DANBOORU_POSTS)}?tags=${
+            encodeURIComponent(`${p.artist} ${arState.tag}`)}"
+            target="_blank" rel="noopener noreferrer"
+            title="This artist on Danbooru">↗</a>` : ''}
         <span class="ar-viewer-dims">${esc(dims)}${size ? ` · ${size}` : ''}</span>
         <span class="ar-viewer-quality" data-ar-quality>${p.full ? 'loading original…' : 'sample only'}</span>
         <a class="ar-btn" href="${esc(p.post)}" target="_blank" rel="noopener noreferrer">Danbooru</a>
@@ -259,6 +308,7 @@ async function arFetch(page) {
   const s = arState;
   const q = new URLSearchParams({ tag: s.tag, page: String(page), sort: s.sort });
   if (s.ratings && s.ratings.length) q.set('ratings', s.ratings.join(','));
+  if (s.extra) q.set('extra', s.extra);
 
   const res = await fetch(`/api/art/search?${q}`);
   const json = await res.json();
@@ -268,6 +318,8 @@ async function arFetch(page) {
   // so an out-of-range selection corrects itself rather than sticking.
   s.allowed = json.data.allowed;
   s.ratings = json.data.ratings;
+  s.sort = json.data.sort;
+  s.sortLocked = !!json.data.sortLocked;
   return json.data;
 }
 
@@ -393,6 +445,17 @@ function arSoloRating(value) {
     : new Set([value]));
 }
 
+// Danbooru tags have no spaces; typing "blue hair" means blue_hair. Doing the
+// substitution here rather than rejecting it saves a pointless error.
+function arSetExtra(value) {
+  const s = arState;
+  if (!s) return;
+  const next = String(value || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/:/g, '');
+  if (next === s.extra) return;
+  s.extra = next;
+  arRun(s.tag, { fresh: true });
+}
+
 function arSetSort(sort) {
   if (!arState || arState.sort === sort) return;
   arState.sort = sort;
@@ -426,7 +489,7 @@ export async function openArt(name, series = []) {
   arState = {
     name, series, tag: null, sort: 'score',
     page: 1, posts: [], hasNext: false, seq: 0,
-    viewing: -1,
+    viewing: -1, extra: '',
   };
   arRender('<div class="ar-wait">Finding this character…</div>');
 
