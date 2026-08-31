@@ -47,6 +47,9 @@ function arEnsureRoot() {
     const viewer = e.target.closest('[data-ar-viewer]');
     if (viewer && !e.target.closest('.ar-full, .ar-viewer-bar, .ar-nav')) return arCloseViewer();
 
+    const only = e.target.closest('[data-ar-only]');
+    if (only) return arSoloRating(only.dataset.arOnly);
+
     const rating = e.target.closest('[data-ar-rating]');
     if (rating) return arToggleRating(rating.dataset.arRating);
 
@@ -113,10 +116,31 @@ function arRatingsHtml() {
   if (!s.allowed || !s.allowed.length) return '';
   const on = new Set(s.ratings || []);
   return `<div class="ar-ratings">${s.allowed.map((r) => `
-    <button class="ar-chip${on.has(r.value) ? ' on' : ''}" type="button"
-      data-ar-rating="${esc(r.value)}" aria-pressed="${on.has(r.value)}"
-      title="${esc(r.means || r.label)}&#10;Click to toggle · double-click for only this"
-      >${esc(r.label)}</button>`).join('')}</div>`;
+    <span class="ar-chip-wrap">
+      <button class="ar-chip${on.has(r.value) ? ' on' : ''}" type="button"
+        data-ar-rating="${esc(r.value)}" aria-pressed="${on.has(r.value)}"
+        title="${esc(r.means || r.label)}&#10;Click to toggle · double-click for only this"
+        >${esc(r.label)}</button>
+      <button class="ar-only" type="button" data-ar-only="${esc(r.value)}"
+        title="Show only ${esc(r.label)}" aria-label="Show only ${esc(r.label)}">only</button>
+    </span>`).join('')}</div>`;
+}
+
+// Repaint the chips without replacing them.
+//
+// The previous version re-rendered the whole row with outerHTML on every
+// toggle, which destroyed the button between the two halves of a double-click.
+// A dblclick only fires when both clicks land on the same element, so the
+// gesture never fired at all — the row just flickered off and on, which is
+// exactly what it looked like.
+function arSyncChips() {
+  if (!arRoot || !arState) return;
+  const on = new Set(arState.ratings || []);
+  for (const btn of arRoot.querySelectorAll('[data-ar-rating]')) {
+    const isOn = on.has(btn.dataset.arRating);
+    btn.classList.toggle('on', isOn);
+    btn.setAttribute('aria-pressed', String(isOn));
+  }
 }
 
 function arShell(body) {
@@ -131,10 +155,8 @@ function arShell(body) {
         </div>
         ${arRatingsHtml()}
         <div class="ar-sorts">
-          <button class="ar-btn${sort === 'score' ? ' on' : ''}${s.sortLocked ? ' off' : ''}"
-            type="button" data-ar-sort="score" title="${s.sortLocked
-    ? 'Unavailable with an extra tag: Danbooru allows two search terms, and the extra tag uses the slot sorting needs'
-    : 'Highest scoring first'}">Top</button>
+          <button class="ar-btn${sort === 'score' ? ' on' : ''}"
+            type="button" data-ar-sort="score" title="Highest scoring first">Top</button>
           <button class="ar-btn${sort === 'new' ? ' on' : ''}" type="button" data-ar-sort="new">Newest</button>
         </div>
         <button class="ar-close" type="button" data-ar-close aria-label="Close">✕</button>
@@ -301,7 +323,8 @@ function arGridHtml() {
   return `
     <div class="ar-grid">${s.posts.map(arCardHtml).join('')}</div>
     ${s.hasNext ? '<div class="ar-more"><button class="ar-btn" type="button" data-ar-more>Load more</button></div>' : ''}
-    ${arNote(`${arRatingNames()} artwork, filtered on the server. Opens on Danbooru.`, 'soft')}`;
+    ${arNote(`${arRatingNames()} artwork, filtered on the server.${
+      s.sortExact === false ? ' Ranked within the 200 most recent matches.' : ''}`, 'soft')}`;
 }
 
 async function arFetch(page) {
@@ -319,7 +342,7 @@ async function arFetch(page) {
   s.allowed = json.data.allowed;
   s.ratings = json.data.ratings;
   s.sort = json.data.sort;
-  s.sortLocked = !!json.data.sortLocked;
+  s.sortExact = json.data.sortExact !== false;
   return json.data;
 }
 
@@ -410,8 +433,7 @@ function arApplyRatings(next) {
   // Keep the server's own order so the chips do not shuffle as you click.
   s.ratings = s.allowed.map((r) => r.value).filter((v) => next.has(v));
 
-  const chips = arRoot && arRoot.querySelector('.ar-ratings');
-  if (chips) chips.outerHTML = arRatingsHtml();
+  arSyncChips();
 
   clearTimeout(arFetchTimer);
   arSetBusy(true);

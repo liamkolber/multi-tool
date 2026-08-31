@@ -325,3 +325,29 @@ button.ar-viewer-artist:hover { color: var(--accent); background: rgba(255, 255,
 /* Top sorting cannot apply while an extra tag is set — shown as unavailable
    rather than hidden, so the reason is discoverable from its tooltip. */
 .ar-btn.off { opacity: 0.4; }
+
+/* --- "only" affordance on a rating chip --- */
+/* Double-click also solos, but a gesture nobody can see is a gesture nobody
+   finds; this makes the same action visible on hover. */
+.ar-chip-wrap { position: relative; display: inline-flex; align-items: center; }
+.ar-only {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  opacity: 0;
+  padding: 3px 7px;
+  pointer-events: none;
+  position: absolute;
+  right: -6px;
+  top: -9px;
+  transition: opacity 0.12s;
+}
+.ar-chip-wrap:hover .ar-only,
+.ar-only:focus-visible { opacity: 1; pointer-events: auto; }
+.ar-only:hover { background: var(--accent); color: #fff; }
