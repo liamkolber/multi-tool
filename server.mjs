@@ -12,12 +12,13 @@ import { tool as media } from './lib/tools/media.mjs';
 import { tool as downloader } from './lib/tools/downloader.mjs';
 import { tool as convert } from './lib/tools/convert.mjs';
 import { tool as library } from './lib/tools/library.mjs';
+import { tool as manga } from './lib/tools/manga.mjs';
 import { tool as reddit } from './lib/tools/reddit.mjs';
 
 export const APP_NAME = "Liam's Multi-Tool";
 
 // Longest prefix first, so '/api/reddit/' wins over the media tool's '/api/'.
-const TOOLS = [media, downloader, convert, library, reddit].sort((a, b) => b.prefix.length - a.prefix.length);
+const TOOLS = [media, downloader, convert, library, manga, reddit].sort((a, b) => b.prefix.length - a.prefix.length);
 
 // The tools that have a server half. A tool needs one only if it does something
 // the browser cannot — Utilities is entirely client-side and so appears in the

@@ -15,7 +15,7 @@ const files = [
   ...readdirSync('public/lib').map((f) => `public/lib/${f}`),
 ];
 
-const PREFIXES = ['cv', 'lb', 'dl', 'rx', 'ut', 'md', 'rd', 'js', 'en', 'hs', 'tm', 'tx'];
+const PREFIXES = ['cv', 'lb', 'dl', 'rx', 'ut', 'md', 'rd', 'js', 'en', 'hs', 'tm', 'tx', 'mg'];
 const PREFIXED = new RegExp(`\\b((?:${PREFIXES.join('|')})[A-Z][A-Za-z0-9_$]*)`, 'g');
 
 let pass = 0;

@@ -459,6 +459,30 @@ lives in a gitignored `.library-index.json`.
 The walk skips hidden folders, `node_modules`, recycle bins and Windows system
 directories, and stops at 12 levels deep or 20,000 files.
 
+## 📖 Manga
+
+The manga counterpart to the anime side of the Media Library, on the same
+AniList API and needing no key. Search or browse manga, manhwa, manhua and
+light novels; filter by genre, kind, country of origin, publication status and
+minimum score; sort by popularity, trending, rating, favourites, newest or
+title.
+
+Origin is read from AniList rather than guessed from the format field, which
+calls all of them MANGA — so Solo Leveling shows as Manhwa and Tamen De Gushi
+as Manhua.
+
+Opening a title gives the synopsis, themes, chapter and volume counts, author
+and artist, characters, related entries, and the publisher links AniList
+curates. Starring anything keeps it in a reading list held in this browser.
+
+This is a catalogue, in the same sense the anime tab is: it surfaces metadata
+and points at official sources. It does not serve pages.
+
+Two upstream quirks it works around: AniList treats an explicit null filter as
+a real constraint rather than ignoring it, so arguments are only sent when they
+have a value; and it caps a result total at 5,000, which is shown as 5,000+
+rather than as a precise-looking lie.
+
 ## 🧪 Utilities
 
 The small conversions you reach for constantly, with no server half at all —
