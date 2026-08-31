@@ -330,3 +330,57 @@
   margin-left: 4px;
 }
 .mg-rank { color: var(--text-dim); font-size: 10.5px; margin-left: 5px; }
+
+/* --- Tag picker --- */
+/* Wider than the other fields: it holds chips as well as the input. */
+.mg-field-wide { flex: 1 1 260px; min-width: 220px; }
+
+.mg-tagpick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  min-height: 34px;
+}
+.mg-tagpick:focus-within { border-color: var(--accent); }
+
+.mg-tagpick input {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  flex: 1 1 90px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 90px;
+  outline: none;
+  padding: 3px 2px;
+}
+
+.mg-chips { display: contents; }
+
+.mg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 2px 4px 2px 9px;
+  white-space: nowrap;
+}
+.mg-chip-x {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 3px;
+}
+.mg-chip-x:hover { color: var(--text); }

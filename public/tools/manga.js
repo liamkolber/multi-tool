@@ -63,6 +63,14 @@ const TEMPLATE = `
         <option value="90">9+</option>
       </select>
     </label>
+    <label class="mg-field mg-field-wide"><span>Tags</span>
+      <div class="mg-tagpick" id="mg-tagpick">
+        <span class="mg-chips" id="mg-chips"></span>
+        <input id="mg-tag-input" list="mg-tag-list" placeholder="Add a tag…"
+          autocomplete="off" aria-label="Filter by tag" />
+        <datalist id="mg-tag-list"></datalist>
+      </div>
+    </label>
     <label class="mg-field"><span>Availability</span>
       <button id="mg-readable" class="mg-btn mg-toggle" type="button" aria-pressed="false"
         title="Hide anything with no official English reader among the loaded results">Readable in EN</button>
@@ -85,6 +93,10 @@ function cacheEls() {
     status: $('mg-status'),
     score: $('mg-score'),
     readable: $('mg-readable'),
+    tagPick: $('mg-tagpick'),
+    chips: $('mg-chips'),
+    tagInput: $('mg-tag-input'),
+    tagList: $('mg-tag-list'),
     line: $('mg-status-line'),
     grid: $('mg-grid'),
     more: $('mg-more'),
@@ -169,6 +181,52 @@ function mgCardHtml(m) {
 // how many were hidden, so the number on screen is never silently wrong.
 let mgReadableOnly = false;
 
+// AND semantics, matching AniList: each tag added narrows the results further.
+let mgPickedTags = [];
+let mgTagVocab = new Map();
+
+function mgRenderChips() {
+  mg.chips.innerHTML = mgPickedTags.map((name) => (
+    `<span class="mg-chip">${esc(name)}<button type="button" class="mg-chip-x"
+      data-drop-tag="${esc(name)}" aria-label="Remove ${esc(name)}">×</button></span>`
+  )).join('');
+  mg.tagPick.classList.toggle('has-tags', mgPickedTags.length > 0);
+}
+
+function mgAddTag(raw) {
+  const name = String(raw || '').trim();
+  if (!name) return false;
+  // Case-insensitive lookup, but store AniList's own casing — the API matches
+  // the tag name exactly and "isekai" returns nothing.
+  const canonical = mgTagVocab.get(name.toLowerCase());
+  if (!canonical || mgPickedTags.includes(canonical)) return false;
+  mgPickedTags.push(canonical);
+  mgRenderChips();
+  return true;
+}
+
+function mgDropTag(name) {
+  const i = mgPickedTags.indexOf(name);
+  if (i < 0) return;
+  mgPickedTags.splice(i, 1);
+  mgRenderChips();
+  mgLoad(1);
+}
+
+async function mgLoadTagVocab() {
+  try {
+    const res = await fetch('/api/manga/tags');
+    const json = await res.json();
+    if (json.status !== 'ok') return;
+    for (const t of json.data.tags) mgTagVocab.set(t.name.toLowerCase(), t.name);
+    // The category rides along as the option label, so the dropdown says what
+    // kind of tag it is without a second lookup.
+    mg.tagList.innerHTML = json.data.tags.map((t) => (
+      `<option value="${esc(t.name)}">${esc(t.category)}</option>`
+    )).join('');
+  } catch { /* the rest of the filters still work */ }
+}
+
 function mgVisible() {
   return mgReadableOnly ? mgItems.filter((m) => m.readableEn) : mgItems;
 }
@@ -206,6 +264,7 @@ function mgQuery(page) {
     if (el.value && el.value !== 'All') p.set(name, el.value);
   }
   if (mg.score.value !== 'any') p.set('score', mg.score.value);
+  for (const name of mgPickedTags) p.append('tag', name);
   return p.toString();
 }
 
@@ -438,6 +497,24 @@ function bindManga(panel) {
     el.addEventListener('change', () => mgLoad(1));
   }
 
+  mg.tagInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (mgAddTag(mg.tagInput.value)) { mg.tagInput.value = ''; mgLoad(1); }
+  });
+
+  // Picking from the datalist fires input, not change, in most browsers — and
+  // fires it for every keystroke too, so only an exact vocabulary hit counts.
+  mg.tagInput.addEventListener('input', () => {
+    if (!mgTagVocab.has(mg.tagInput.value.trim().toLowerCase())) return;
+    if (mgAddTag(mg.tagInput.value)) { mg.tagInput.value = ''; mgLoad(1); }
+  });
+
+  mg.chips.addEventListener('click', (e) => {
+    const x = e.target.closest('[data-drop-tag]');
+    if (x) mgDropTag(x.dataset.dropTag);
+  });
+
   mg.readable.addEventListener('click', () => {
     mgReadableOnly = !mgReadableOnly;
     mg.readable.classList.toggle('on', mgReadableOnly);
@@ -503,6 +580,7 @@ export const tool = {
     cacheEls();
     bindManga(panel);
     mgLoadGenres();
+    mgLoadTagVocab();
     mgLoad(1);
   },
   show() {
