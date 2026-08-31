@@ -62,12 +62,9 @@ const TEMPLATE = `
         <option value="90">9+</option>
       </select>
     </label>
-    <label class="mg-field"><span>Mature</span>
-      <select id="mg-adult">
-        <option value="sfw">Hide</option>
-        <option value="all">Include</option>
-        <option value="adult">Only</option>
-      </select>
+    <label class="mg-field"><span>Availability</span>
+      <button id="mg-readable" class="mg-btn mg-toggle" type="button" aria-pressed="false"
+        title="Hide anything with no official English reader among the loaded results">Readable in EN</button>
     </label>
   </div>
 
@@ -86,7 +83,7 @@ function cacheEls() {
     country: $('mg-country'),
     status: $('mg-status'),
     score: $('mg-score'),
-    adult: $('mg-adult'),
+    readable: $('mg-readable'),
     line: $('mg-status-line'),
     grid: $('mg-grid'),
     more: $('mg-more'),
@@ -166,15 +163,27 @@ function mgCardHtml(m) {
   </article>`;
 }
 
+// Filters the loaded results rather than the query: AniList has no "has an
+// English reader" filter, so this narrows what came back. The status line says
+// how many were hidden, so the number on screen is never silently wrong.
+let mgReadableOnly = false;
+
+function mgVisible() {
+  return mgReadableOnly ? mgItems.filter((m) => m.readableEn) : mgItems;
+}
+
 function mgRenderGrid() {
-  if (!mgItems.length) {
+  const shown = mgVisible();
+  if (!shown.length) {
     mg.grid.innerHTML = `<div class="mg-empty">${
-      mgShowingList ? 'Your reading list is empty. Star anything to keep it here.' : 'Nothing matched that.'
+      mgReadableOnly && mgItems.length ? 'None of these have an official English reader listed.'
+        : mgShowingList ? 'Your reading list is empty. Star anything to keep it here.'
+          : 'Nothing matched that.'
     }</div>`;
     mg.more.hidden = true;
     return;
   }
-  mg.grid.innerHTML = mgItems.map(mgCardHtml).join('');
+  mg.grid.innerHTML = shown.map(mgCardHtml).join('');
 }
 
 function mgSetLine(text, kind) {
@@ -188,7 +197,6 @@ function mgQuery(page) {
     page: String(page),
     perPage: '30',
     sort: mg.sort.value,
-    adult: mg.adult.value,
   });
   const q = mg.search.value.trim();
   if (q) p.set('query', q);
@@ -258,8 +266,81 @@ function mgShowList() {
 function mgLinkRows(links) {
   if (!links.length) return '';
   return `<div class="mg-links">${links.map((l) =>
-    `<a class="mg-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.site)}</a>`
+    `<a class="mg-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.site)}${
+      l.notes ? `<span class="mg-link-note">${esc(l.notes)}</span>` : ''}</a>`
   ).join('')}</div>`;
+}
+
+const MG_LANG_FIRST = 'English';
+
+// English first, then the rest alphabetically — a title serialised in six
+// territories should not bury the one you can read behind Thai and Korean.
+function mgLangGroups(links) {
+  const by = new Map();
+  for (const l of links) {
+    const lang = l.language || 'Other';
+    if (!by.has(lang)) by.set(lang, []);
+    by.get(lang).push(l);
+  }
+  return [...by.entries()].sort((a, b) => (
+    a[0] === MG_LANG_FIRST ? -1 : b[0] === MG_LANG_FIRST ? 1 : a[0].localeCompare(b[0])));
+}
+
+function mgLangRow([lang, list]) {
+  return `<div class="mg-lang"><span class="mg-lang-name">${esc(lang)}</span>${mgLinkRows(list)}</div>`;
+}
+
+const mgPlural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function mgReadSection(links) {
+  if (!links.length) return '';
+  const read = links.filter((l) => l.kind === 'read');
+  const buy = links.filter((l) => l.kind === 'buy');
+  const other = links.filter((l) => l.kind === 'info' || l.kind === 'social');
+
+  let body = '';
+  if (read.length) {
+    const groups = mgLangGroups(read);
+    const en = groups.filter(([lang]) => lang === MG_LANG_FIRST);
+    const rest = groups.filter(([lang]) => lang !== MG_LANG_FIRST);
+    body += en.map(mgLangRow).join('');
+    if (rest.length) {
+      body += `<details class="mg-fold"${en.length ? '' : ' open'}>
+        <summary>${mgPlural(rest.length, 'other language')}</summary>
+        ${rest.map(mgLangRow).join('')}</details>`;
+    }
+  } else {
+    body += '<p class="mg-note">No official chapter reader listed.</p>';
+  }
+
+  if (buy.length) body += `<h4 class="mg-sub">Buy</h4>${mgLinkRows(buy)}`;
+  if (other.length) {
+    body += `<details class="mg-fold"><summary>${
+      mgPlural(other.length, 'official &amp; social link')}</summary>${mgLinkRows(other)}</details>`;
+  }
+
+  return `<div class="mg-section"><h3>Where to read</h3>${body}
+    <p class="mg-note">Publisher links as registered with AniList. What is free varies by
+    platform — most readers give you the first and latest chapters.</p></div>`;
+}
+
+// Every tag AniList has, ranked, but only ten on screen until you ask for more.
+// Spoiler tags stay behind their own toggle rather than being dropped.
+function mgTagSection(tags) {
+  if (!tags.length) return '';
+  const open = tags.filter((t) => !t.spoiler);
+  const spoil = tags.filter((t) => t.spoiler);
+  const chip = (tag) => `<span class="mg-tag soft" title="${tag.rank}% of readers agree">${
+    esc(tag.name)}<span class="mg-rank">${tag.rank}%</span></span>`;
+  const chips = (list) => `<div class="mg-genres">${list.map(chip).join('')}</div>`;
+  const rest = open.slice(10);
+
+  return `<div class="mg-section"><h3>Tags <span class="mg-count">${tags.length}</span></h3>
+    ${chips(open.slice(0, 10))}
+    ${rest.length ? `<details class="mg-fold"><summary>${rest.length} more</summary>${chips(rest)}</details>` : ''}
+    ${spoil.length ? `<details class="mg-fold"><summary>${
+      mgPlural(spoil.length, 'spoiler tag')}</summary>${chips(spoil)}</details>` : ''}
+  </div>`;
 }
 
 async function mgOpen(id) {
@@ -311,12 +392,9 @@ async function mgOpen(id) {
 
     ${d.summary ? `<p class="mg-summary">${esc(d.summary)}</p>` : ''}
 
-    ${d.tags.length ? `<div class="mg-section"><h3>Themes</h3>
-      <div class="mg-genres">${d.tags.map((t) => `<span class="mg-tag soft">${esc(t.name)}</span>`).join('')}</div></div>` : ''}
+    ${mgTagSection(d.tags)}
 
-    ${d.links.length ? `<div class="mg-section"><h3>Read it officially</h3>
-      ${mgLinkRows(d.links)}
-      <p class="mg-note">Publisher and storefront links as listed by AniList.</p></div>` : ''}
+    ${mgReadSection(d.links)}
 
     ${d.characters.length ? `<div class="mg-section"><h3>Characters</h3>
       <div class="mg-people">${d.characters.map((c) => `<div class="mg-person">
@@ -354,9 +432,18 @@ function bindManga(panel) {
   mg.search.addEventListener('input', mgSearchNow);
   mg.search.addEventListener('keydown', (e) => { if (e.key === 'Enter') mgLoad(1); });
 
-  for (const el of [mg.sort, mg.genre, mg.format, mg.country, mg.status, mg.score, mg.adult]) {
+  for (const el of [mg.sort, mg.genre, mg.format, mg.country, mg.status, mg.score]) {
     el.addEventListener('change', () => mgLoad(1));
   }
+
+  mg.readable.addEventListener('click', () => {
+    mgReadableOnly = !mgReadableOnly;
+    mg.readable.classList.toggle('on', mgReadableOnly);
+    mg.readable.setAttribute('aria-pressed', String(mgReadableOnly));
+    const hidden = mgItems.length - mgVisible().length;
+    mgSetLine(mgReadableOnly && hidden ? `${fmtNumber(hidden)} hidden with no English reader` : '');
+    mgRenderGrid();
+  });
 
   mg.listBtn.addEventListener('click', () => {
     if (mgShowingList) mgLoad(1);
