@@ -5,6 +5,7 @@
 // upstream responses and the reading list lives in this browser.
 
 import { $, esc, fmtNumber, debounce, showModal } from '../lib/dom.js';
+import { artButton } from '../lib/art.js';
 
 const TEMPLATE = `
   <div class="tool-head">
@@ -400,6 +401,7 @@ async function mgOpen(id) {
       <div class="mg-people">${d.characters.map((c) => `<div class="mg-person">
         ${c.image ? `<img src="${esc(c.image)}" alt="" loading="lazy" />` : '<span class="mg-nocover">?</span>'}
         <span class="mg-person-name">${esc(c.name)}</span>
+        ${artButton(c.name, [d.title, d.title_secondary, d.native])}
       </div>`).join('')}</div></div>` : ''}
 
     ${d.related.length ? `<div class="mg-section"><h3>Related</h3>

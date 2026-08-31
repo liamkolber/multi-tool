@@ -4,6 +4,7 @@
 // own search bar and its own pager, all of which live inside its panel.
 
 import { $, esc, debounce, fmtNumber, option, optionHtml, showModal, closeModal } from '../lib/dom.js';
+import { artButton } from '../lib/art.js';
 
 const TEMPLATE = `
   <div class="app" id="app">
@@ -958,7 +959,9 @@ function extraHtml(full) {
     html += `<div class="extra-tags">${full.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>`;
   }
   if ((full.characters || []).length) {
-    html += `<h4 class="extra-title">Characters</h4><div class="char-grid">${full.characters.map(charCardHtml).join('')}</div>`;
+    const series = [full.title, full.title_secondary, full.native];
+    html += `<h4 class="extra-title">Characters</h4><div class="char-grid">${
+      full.characters.map((c) => charCardHtml(c, series)).join('')}</div>`;
   }
   if ((full.relations || []).length) {
     html += `<h4 class="extra-title">Related</h4><div class="rel-row">${full.relations.map(relCardHtml).join('')}</div>`;
@@ -966,7 +969,7 @@ function extraHtml(full) {
   return html;
 }
 
-function charCardHtml(c) {
+function charCardHtml(c, series = []) {
   const img = c.image || PLACEHOLDER;
   const va = c.va && c.va.name ? `<div class="char-va">CV: ${esc(c.va.name)}</div>` : '';
   return `
@@ -976,6 +979,7 @@ function charCardHtml(c) {
       <div class="char-name">${esc(c.name)}</div>
       ${c.role ? `<div class="char-role">${esc(c.role)}</div>` : ''}
       ${va}
+      ${artButton(c.name, series)}
     </div>`;
 }
 
