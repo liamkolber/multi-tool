@@ -204,7 +204,7 @@ function arCardHtml(p, i) {
   return `
     <button class="ar-card" type="button" data-ar-view="${i}"
        title="${esc(p.artist ? `by ${p.artist}` : 'Open')}">
-      <img src="${esc(p.preview)}" alt="" loading="lazy" />
+      <img src="${esc(p.preview)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
       ${(arState.sources || []).length > 1
     ? `<span class="ar-site" data-site="${esc(p.site)}">${esc(arSiteLabel(p.site))}</span>` : ''}
       <span class="ar-card-meta">
@@ -259,7 +259,8 @@ function arViewerHtml() {
       </div>
       <button class="ar-nav prev" type="button" data-ar-step="-1" aria-label="Previous">‹</button>
       <div class="ar-stage">
-        <img class="ar-full" data-ar-full src="${esc(p.large || p.preview)}" alt="" />
+        <img class="ar-full" data-ar-full src="${esc(p.large || p.preview)}" alt=""
+          referrerpolicy="no-referrer" />
       </div>
       <button class="ar-nav next" type="button" data-ar-step="1" aria-label="Next">›</button>
     </div>`;
@@ -276,6 +277,7 @@ function arUpgradeImage() {
 
   const token = s.viewing;
   const hi = new Image();
+  hi.referrerPolicy = 'no-referrer';
   hi.onload = () => {
     if (!arState || arState.viewing !== token) return;
     const live = arRoot.querySelector('[data-ar-full]');
