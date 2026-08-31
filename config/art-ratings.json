@@ -1,0 +1,21 @@
+{
+  "//": [
+    "Which Danbooru ratings the character art tool will serve.",
+    "",
+    "Edit `enabled` and save — the running app picks it up on the next request,",
+    "no restart. Reload the overlay to see the toggles change.",
+    "",
+    "  g  General       no nudity, nothing suggestive",
+    "  s  Sensitive     swimsuits, underwear, revealing outfits - not pornographic",
+    "  q  Questionable  partial nudity, strong suggestion, no explicit acts",
+    "  e  Explicit      pornographic",
+    "",
+    "These are exact buckets, not levels: [\"s\"] serves ONLY sensitive and",
+    "excludes general. To widen, add a letter rather than swapping it.",
+    "",
+    "If this file is missing, unparseable, or lists nothing valid, the app keeps",
+    "the last good value and falls back to [\"g\"] on a cold start - it never",
+    "fails open to something more permissive than you asked for."
+  ],
+  "enabled": ["g", "s"]
+}
