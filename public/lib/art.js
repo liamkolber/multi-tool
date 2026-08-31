@@ -205,6 +205,8 @@ function arCardHtml(p, i) {
     <button class="ar-card" type="button" data-ar-view="${i}"
        title="${esc(p.artist ? `by ${p.artist}` : 'Open')}">
       <img src="${esc(p.preview)}" alt="" loading="lazy" />
+      ${(arState.sources || []).length > 1
+    ? `<span class="ar-site" data-site="${esc(p.site)}">${esc(arSiteLabel(p.site))}</span>` : ''}
       <span class="ar-card-meta">
         ${p.artist ? `<span class="ar-artist">${esc(p.artist)}</span>` : ''}
         <span class="ar-dims">${esc(dims)}</span>
@@ -213,6 +215,12 @@ function arCardHtml(p, i) {
 }
 
 const DANBOORU_POSTS = 'https://danbooru.donmai.us/posts';
+
+// Filled from each response, so adding a source server-side needs nothing here.
+const arSiteLabel = (id) => {
+  const found = (arState && arState.sources || []).find((s) => s.id === id);
+  return found ? found.label : id;
+};
 
 const arBytes = (n) => {
   if (!n) return '';
@@ -235,6 +243,7 @@ function arViewerHtml() {
     <div class="ar-viewer" data-ar-viewer>
       <div class="ar-viewer-bar">
         <span class="ar-viewer-pos">${s.viewing + 1} / ${s.posts.length}</span>
+        <span class="ar-site" data-site="${esc(p.site)}">${esc(arSiteLabel(p.site))}</span>
         ${p.artist ? `
           <button class="ar-viewer-artist" type="button" data-ar-by="${esc(p.artist)}"
             title="Show only this artist">${esc(p.artist)}</button>
@@ -244,7 +253,8 @@ function arViewerHtml() {
             title="This artist on Danbooru">↗</a>` : ''}
         <span class="ar-viewer-dims">${esc(dims)}${size ? ` · ${size}` : ''}</span>
         <span class="ar-viewer-quality" data-ar-quality>${p.full ? 'loading original…' : 'sample only'}</span>
-        <a class="ar-btn" href="${esc(p.post)}" target="_blank" rel="noopener noreferrer">Danbooru</a>
+        <a class="ar-btn" href="${esc(p.post)}" target="_blank" rel="noopener noreferrer">${
+    esc(arSiteLabel(p.site))}</a>
         <button class="ar-close" type="button" data-ar-viewer-close aria-label="Close">✕</button>
       </div>
       <button class="ar-nav prev" type="button" data-ar-step="-1" aria-label="Previous">‹</button>
@@ -323,7 +333,10 @@ function arGridHtml() {
   return `
     <div class="ar-grid">${s.posts.map(arCardHtml).join('')}</div>
     ${s.hasNext ? '<div class="ar-more"><button class="ar-btn" type="button" data-ar-more>Load more</button></div>' : ''}
-    ${arNote(`${arRatingNames()} artwork, filtered on the server.${
+    ${(s.warnings || []).length
+    ? arNote(`Some sources did not answer — ${s.warnings.join('; ')}`, 'error') : ''}
+    ${arNote(`${arRatingNames()} artwork from ${
+      (s.sources || []).map((x) => x.label).join(' + ') || 'no sources'}, filtered on the server.${
       s.sortExact === false ? ' Ranked within the 200 most recent matches.' : ''}`, 'soft')}`;
 }
 
@@ -343,6 +356,8 @@ async function arFetch(page) {
   s.ratings = json.data.ratings;
   s.sort = json.data.sort;
   s.sortExact = json.data.sortExact !== false;
+  s.sources = json.data.sources || [];
+  s.warnings = json.data.warnings || [];
   return json.data;
 }
 
