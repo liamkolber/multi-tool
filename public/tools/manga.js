@@ -380,8 +380,9 @@ function mgReadSection(links) {
   }
 
   return `<div class="mg-section"><h3>Where to read</h3>${body}
-    <p class="mg-note">Publisher links as registered with AniList. What is free varies by
-    platform — most readers give you the first and latest chapters.</p></div>`;
+    <p class="mg-note">Publisher and storefront links as registered with AniList and
+    MangaDex. What is free varies by platform — most readers give you the first and
+    latest chapters.</p></div>`;
 }
 
 // Every tag AniList has, ranked, but only ten on screen until you ask for more.
