@@ -447,6 +447,7 @@ async function mgOpen(id) {
           <button class="mg-btn${saved ? ' on' : ''}" type="button" data-save-detail="${esc(d.id)}">
             ${saved ? '★ On your list' : '☆ Add to reading list'}</button>
           ${d.siteUrl ? `<a class="mg-btn" href="${esc(d.siteUrl)}" target="_blank" rel="noopener noreferrer">AniList</a>` : ''}
+          ${d.mangadexUrl ? `<a class="mg-btn" href="${esc(d.mangadexUrl)}" target="_blank" rel="noopener noreferrer">MangaDex</a>` : ''}
         </div>
       </div>
     </div>
