@@ -18,6 +18,8 @@ const TEMPLATE = `
 
   <div class="cv-bar">
     <button id="cv-pick" class="btn btn-primary" type="button">Choose a file…</button>
+    <button id="cv-pick-folder" class="btn-ghost" type="button"
+      title="Pack a folder of images into a comic archive">Choose a folder…</button>
     <span class="cv-or">or paste a path</span>
     <input id="cv-path" type="text" placeholder="C:\\Users\\you\\Videos\\clip.mp4" autocomplete="off" spellcheck="false" />
     <button id="cv-load" class="btn-ghost" type="button">Load</button>
@@ -39,6 +41,7 @@ const cv = {};
 function cacheEls() {
   Object.assign(cv, {
     pick: $('cv-pick'),
+    pickFolder: $('cv-pick-folder'),
     path: $('cv-path'),
     load: $('cv-load'),
     tools: $('cv-tools'),
@@ -75,6 +78,15 @@ const HEIGHTS = [['', 'Keep original'], ['2160', '2160p'], ['1440', '1440p'], ['
   ['720', '720p'], ['480', '480p'], ['360', '360p']];
 
 const OP_FIELDS = {
+  cbz: [
+    { name: 'include', label: 'Pages', type: 'select', default: 'all',
+      options: [['all', 'Every image in the folder'], ['webp', 'WebP only']] },
+    // Readers sort pages by filename and not all of them sort numerically, so
+    // "10" can land before "2". Renumbering with a fixed width makes the order
+    // hold whatever opens the archive.
+    { name: 'rename', label: 'Page names', type: 'select', default: 'keep',
+      options: [['keep', 'Keep the original names'], ['number', 'Renumber 001, 002, …']] },
+  ],
   convert: [
     { name: 'format', label: 'Format', type: 'select', default: 'mp4',
       options: [['mp4', 'MP4'], ['mkv', 'MKV'], ['webm', 'WebM'], ['mov', 'MOV'], ['avi', 'AVI']] },
@@ -230,6 +242,25 @@ async function cvPickBatchDir() {
   }
 }
 
+// A folder goes through the same probe as a file: the server decides what it
+// is and which operations apply, so nothing here needs to know about cbz.
+async function cvPickFolder() {
+  cvClearError();
+  cv.pickFolder.disabled = true;
+  try {
+    const res = await fetch('/api/convert/pickdir', { method: 'POST' });
+    const json = await res.json();
+    if (json.status !== 'ok') return cvShowError(json.status_message || 'Could not open the folder dialog.');
+    if (json.data.cancelled) return;
+    cv.path.value = json.data.dir;
+    await cvLoadPath();
+  } catch {
+    cvShowError('Could not reach the server.');
+  } finally {
+    cv.pickFolder.disabled = false;
+  }
+}
+
 // --- Loading a file ---
 async function cvPickFile() {
   cvClearError();
@@ -274,13 +305,18 @@ async function cvLoadPath() {
   }
 }
 
-const KIND_ICON = { video: '🎬', audio: '🎵', image: '🖼️', other: '📄' };
+const KIND_ICON = { video: '🎬', audio: '🎵', image: '🖼️', folder: '📚', other: '📄' };
 
 function cvRenderFile() {
   const f = cvFile;
   if (!f) return;
 
-  const meta = [
+  // A folder is described by its pages; duration and codecs mean nothing.
+  const meta = f.kind === 'folder' ? [
+    `${fmtNumber(f.pageCount)} page${f.pageCount === 1 ? '' : 's'}`,
+    cvBytes(f.size),
+    Object.entries(f.byExt || {}).map(([ext, n]) => `${n} ${ext}`).join(', '),
+  ].filter(Boolean).map(esc).join(' · ') : [
     f.kind,
     cvBytes(f.size),
     f.duration ? cvClock(f.duration) : null,
@@ -488,6 +524,7 @@ function cvConnect() {
 
 function bindConverter() {
   cv.pick.addEventListener('click', cvPickFile);
+  cv.pickFolder.addEventListener('click', cvPickFolder);
   cv.load.addEventListener('click', cvLoadPath);
   cv.path.addEventListener('keydown', (e) => { if (e.key === 'Enter') cvLoadPath(); });
 
