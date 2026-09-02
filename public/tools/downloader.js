@@ -315,7 +315,7 @@ function dlRenderIg() {
       <span>A separate Instagram window is open — sign in there, then come back.
         It has to be its own window: Windows locks a running browser's cookies,
         so this one gets closed to read them.</span>
-      <button class="btn btn-primary" type="button" data-ig-done>I have signed in</button>
+      <button class="btn-ghost" type="button" data-ig-done>Close it for me</button>
     </div>` : ''}`;
 }
 
@@ -335,12 +335,61 @@ async function dlIgSignIn(btn) {
 
     dlIgWaiting = true;
     dlRenderIg();
+    dlWatchSession();
   } catch {
     dlShowError('Could not reach the server.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Sign in to Instagram';
   }
+}
+
+// Closing the window is the signal, because it is the only one available:
+// while the browser runs it holds the cookie store and nothing can read it.
+// The moment it lets go, the session becomes both readable and usable — so
+// closing the window and being able to check it are the same event.
+//
+// Which means the button is a fallback, not the mechanism. Sign in, close the
+// window the way you would any other, and this notices.
+let dlSessionWatch = null;
+
+function dlStopWatching() {
+  clearInterval(dlSessionWatch);
+  dlSessionWatch = null;
+}
+
+function dlWatchSession() {
+  dlStopWatching();
+  const started = Date.now();
+
+  dlSessionWatch = setInterval(async () => {
+    // Five minutes is long enough for a login with two-factor and a password
+    // manager; past that, something else is going on.
+    if (Date.now() - started > 300000) return dlStopWatching();
+
+    let d;
+    try {
+      const res = await fetch('/api/dl/session');
+      const json = await res.json();
+      if (json.status !== 'ok') return;
+      d = json.data;
+    } catch {
+      return;
+    }
+
+    // Still up, or shut but unreadable: nothing to conclude yet.
+    if (d.windowOpen || !d.known) return;
+
+    dlStopWatching();
+    dlIgWaiting = false;
+
+    if (d.signedIn) {
+      if (dl.cookies) { dl.cookies.value = 'session'; dlSyncCookieUi(); dlSavePrefs(); }
+    } else {
+      dlShowError('That window closed without a signed-in session. Sign in fully, then close it.');
+    }
+    await dlInspect(dl.url.value.trim());
+  }, 1500);
 }
 
 // The close is the point: a running browser keeps its cookie store locked.
@@ -360,6 +409,7 @@ async function dlIgDone(btn) {
   } finally {
     // Cleared whatever happened: the window is gone either way, so a row that
     // still says one is open would be lying.
+    dlStopWatching();
     dlIgWaiting = false;
     await dlInspect(dl.url.value.trim());
   }
