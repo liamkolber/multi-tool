@@ -16,6 +16,22 @@ const TEMPLATE = `
 
   <form id="dl-form" class="dl-bar">
     <input id="dl-url" type="url" placeholder="Paste a video URL…" autocomplete="off" spellcheck="false" />
+    <label class="dl-cookies" title="Borrow the login session from a browser you are already signed in with. Needed for anything that only loads when logged in — Instagram stories among them.">
+      <span>Signed in via</span>
+      <select id="dl-cookies">
+        <option value="">Nothing</option>
+        <option value="chrome">Chrome</option>
+        <option value="edge">Edge</option>
+        <option value="firefox">Firefox</option>
+        <option value="brave">Brave</option>
+        <option value="opera">Opera</option>
+        <option value="vivaldi">Vivaldi</option>
+        <option value="file">A cookies.txt file…</option>
+      </select>
+    </label>
+    <input id="dl-cookie-file" class="dl-cookie-file" type="text" hidden
+      placeholder="C:\\Users\\you\\cookies.txt" autocomplete="off" spellcheck="false"
+      title="A Netscape-format cookies.txt exported from your browser" />
     <button id="dl-fetch" class="btn btn-primary" type="submit">Fetch</button>
   </form>
 
@@ -35,6 +51,8 @@ function cacheEls() {
   Object.assign(dl, {
   form: $('dl-form'),
   url: $('dl-url'),
+  cookies: $('dl-cookies'),
+  cookieFile: $('dl-cookie-file'),
   fetchBtn: $('dl-fetch'),
   tools: $('dl-tools'),
   error: $('dl-error'),
@@ -134,7 +152,11 @@ async function dlDoProbe(e) {
   dl.fetchBtn.textContent = 'Reading…';
 
   try {
-    const res = await fetch(`/api/dl/probe?url=${encodeURIComponent(url)}`);
+    const cookies = dlCookieChoice();
+    const file = dlCookieFile();
+    const res = await fetch(`/api/dl/probe?url=${encodeURIComponent(url)}${
+      cookies ? `&cookies=${encodeURIComponent(cookies)}` : ''}${
+      cookies === 'file' && file ? `&cookieFile=${encodeURIComponent(file)}` : ''}`);
     const json = await res.json();
     if (json.status !== 'ok') {
       dlShowError(json.status_message || 'Could not read that URL.');
@@ -226,18 +248,42 @@ function dlRenderProbe() {
 }
 
 // The container preference is worth keeping across refreshes.
+const dlCookieChoice = () => (dl.cookies ? dl.cookies.value : '');
+const dlCookieFile = () => (dl.cookieFile ? dl.cookieFile.value.trim() : '');
+
+// The path box only means anything for the file option.
+function dlSyncCookieUi() {
+  if (!dl.cookieFile) return;
+  dl.cookieFile.hidden = dlCookieChoice() !== 'file';
+}
+
 const DL_PREFS_KEY = 'multitool:downloader-prefs';
 
 function dlSavePrefs() {
   try {
-    localStorage.setItem(DL_PREFS_KEY, JSON.stringify({ preferMp4: dlPreferMp4 }));
+    localStorage.setItem(DL_PREFS_KEY, JSON.stringify({
+      preferMp4: dlPreferMp4,
+      cookies: dlCookieChoice(),
+      cookieFile: dlCookieFile(),
+    }));
   } catch { /* ignore quota */ }
 }
 
 function dlLoadPrefs() {
   try {
     const saved = JSON.parse(localStorage.getItem(DL_PREFS_KEY));
-    if (saved && typeof saved.preferMp4 === 'boolean') dlPreferMp4 = saved.preferMp4;
+    if (!saved) return;
+    if (typeof saved.preferMp4 === 'boolean') dlPreferMp4 = saved.preferMp4;
+    // Only restore a value the select actually offers, so a stale pref cannot
+    // leave it showing a browser that is no longer listed.
+    if (dl.cookies && typeof saved.cookies === 'string'
+      && [...dl.cookies.options].some((o) => o.value === saved.cookies)) {
+      dl.cookies.value = saved.cookies;
+    }
+    if (dl.cookieFile && typeof saved.cookieFile === 'string') {
+      dl.cookieFile.value = saved.cookieFile;
+    }
+    dlSyncCookieUi();
   } catch { /* keep the defaults */ }
 }
 
@@ -256,6 +302,8 @@ async function dlStart(opts, from) {
         title: src ? src.title : null,
         thumbnail: src ? src.thumbnail : null,
         preferMp4: dlPreferMp4,
+        cookies: dlCookieChoice(),
+        cookieFile: dlCookieFile(),
         ...opts,
       }),
     });
@@ -493,6 +541,10 @@ export const tool = {
     cacheEls();
     bindDownloader();
     dlLoadPrefs();
+    if (dl.cookies) {
+      dl.cookies.addEventListener('change', () => { dlSyncCookieUi(); dlSavePrefs(); });
+    }
+    if (dl.cookieFile) dl.cookieFile.addEventListener('change', dlSavePrefs);
     dlLoadTools();
     dlLoadJobs();
     dlConnect();
