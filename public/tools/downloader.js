@@ -154,6 +154,20 @@ async function dlDoProbe(e) {
   dl.fetchBtn.disabled = true;
   dl.fetchBtn.textContent = 'Reading…';
 
+  // One button, two paths. yt-dlp cannot see Instagram photos at all, so an
+  // Instagram link goes to the API fetcher and everything else carries on to
+  // yt-dlp exactly as before.
+  if (dlIg && dlIg.instagram && dlIg.signedIn
+    && ['post', 'story', 'profile'].includes(dlIg.instagram.kind)) {
+    try {
+      await dlIgFindMedia(dl.fetchBtn);
+    } finally {
+      dl.fetchBtn.disabled = false;
+      dl.fetchBtn.textContent = 'Fetch';
+    }
+    return;
+  }
+
   try {
     if (dlIg && dlIg.fetchUrl && dlIg.fetchUrl !== url) url = dlIg.fetchUrl;
     const cookies = dlCookieChoice();
@@ -313,9 +327,8 @@ function dlRenderIg() {
          <button class="btn btn-primary" type="button" data-ig-signin>Sign in to Instagram</button>`}
     </div>` : ''}
     ${canFetch && dlIg.signedIn && !dlIgWaiting ? `<div class="dl-ig-row">
-      <button class="btn btn-primary" type="button" data-ig-media>${
-    ig.kind === 'profile' ? 'Find stories' : 'Find photos and video'}</button>
-      <span class="dl-ig-what">Instagram's own API — the only way to reach photos and albums.</span>
+      <span class="dl-ig-what">Fetch will use Instagram's own API — the only way to reach
+        photos and albums${ig.kind === 'profile' ? ', and stories' : ''}.</span>
     </div>` : ''}
     <div id="dl-ig-media"></div>
     ${dlIgWaiting ? `<div class="dl-ig-row dl-ig-waiting">
@@ -388,7 +401,6 @@ async function dlIgFindMedia(btn) {
     dlShowError('Could not reach the server.');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Find photos and video';
   }
 }
 
