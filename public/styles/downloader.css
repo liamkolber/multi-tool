@@ -246,3 +246,31 @@
 }
 .dl-cookie-file:focus { border-color: var(--accent); }
 .dl-cookie-file::placeholder { color: var(--text-dim); }
+
+/* --- Instagram strip --- */
+/* Only appears for an Instagram link: it says what the link is and offers the
+   one thing that link supports, instead of a generic box that will fail. */
+.dl-ig {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dl-ig-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dl-ig-tag {
+  background: linear-gradient(45deg, #f09433, #dc2743, #bc1888);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  flex: 0 0 auto;
+}
+.dl-ig-what { color: var(--text-dim); font-size: 13px; }
+.dl-ig-ok { color: var(--text); font-size: 13px; }
+.dl-ig-warn { color: #e0a060; font-size: 13px; }
+.dl-ig-waiting { border-top: 1px solid var(--border); padding-top: 9px; font-size: 13px; }

@@ -10,3 +10,4 @@ bin/
 .library-index.json
 .library-thumbs/
 .reddit.json
+.browser-session/

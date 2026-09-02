@@ -20,6 +20,7 @@ const TEMPLATE = `
       <span>Signed in via</span>
       <select id="dl-cookies">
         <option value="">Nothing</option>
+        <option value="session">This app's own sign-in</option>
         <option value="chrome">Chrome</option>
         <option value="edge">Edge</option>
         <option value="firefox">Firefox</option>
@@ -35,6 +36,7 @@ const TEMPLATE = `
     <button id="dl-fetch" class="btn btn-primary" type="submit">Fetch</button>
   </form>
 
+  <div id="dl-ig" class="dl-ig" hidden></div>
   <div id="dl-error" class="dl-notice error" hidden></div>
   <div id="dl-probe" class="dl-probe" hidden></div>
 
@@ -53,6 +55,7 @@ function cacheEls() {
   url: $('dl-url'),
   cookies: $('dl-cookies'),
   cookieFile: $('dl-cookie-file'),
+  ig: $('dl-ig'),
   fetchBtn: $('dl-fetch'),
   tools: $('dl-tools'),
   error: $('dl-error'),
@@ -152,6 +155,7 @@ async function dlDoProbe(e) {
   dl.fetchBtn.textContent = 'Reading…';
 
   try {
+    if (dlIg && dlIg.fetchUrl && dlIg.fetchUrl !== url) url = dlIg.fetchUrl;
     const cookies = dlCookieChoice();
     const file = dlCookieFile();
     const res = await fetch(`/api/dl/probe?url=${encodeURIComponent(url)}${
@@ -248,6 +252,107 @@ function dlRenderProbe() {
 }
 
 // The container preference is worth keeping across refreshes.
+// --- Instagram ---
+// Instagram answers almost nothing to a signed-out request, so a link to it
+// gets its own strip: what the link is, whether there is a session, and the
+// one action that link supports.
+let dlIg = null;
+
+async function dlInspect(raw) {
+  if (!raw) { dl.ig.hidden = true; dlIg = null; return; }
+  try {
+    const res = await fetch(`/api/dl/inspect?url=${encodeURIComponent(raw)}`);
+    const json = await res.json();
+    dlIg = json.status === 'ok' && json.data.instagram ? json.data : null;
+  } catch {
+    dlIg = null;
+  }
+  dlRenderIg();
+}
+
+function dlRenderIg() {
+  if (!dlIg) { dl.ig.hidden = true; return; }
+  const ig = dlIg.instagram;
+
+  const what = {
+    post: 'A post — the photo, video or album behind this link.',
+    story: 'A single story.',
+    profile: `An account. Its current stories are what can be fetched — Instagram does not let this pull an account's whole history.`,
+    home: 'The Instagram home page, which is not something to fetch.',
+    unsupported: 'This part of Instagram is not something this can fetch.',
+  }[ig.kind] || '';
+
+  const canFetch = ig.kind === 'post' || ig.kind === 'story' || ig.kind === 'profile';
+
+  dl.ig.hidden = false;
+  dl.ig.innerHTML = `
+    <div class="dl-ig-row">
+      <span class="dl-ig-tag">Instagram</span>
+      <span class="dl-ig-what">${esc(what)}</span>
+    </div>
+    ${canFetch ? `<div class="dl-ig-row">
+      ${dlIg.signedIn
+    ? `<span class="dl-ig-ok">Signed in — this link will use that session.</span>
+         <button class="btn-ghost" type="button" data-ig-signin>Sign in again</button>`
+    : `<span class="dl-ig-warn">Not signed in. Instagram will refuse this without a session.</span>
+         <button class="btn btn-primary" type="button" data-ig-signin>Sign in to Instagram</button>`}
+    </div>` : ''}`;
+}
+
+// Opens a browser window on the app's own profile. Signing in there leaves the
+// session in that profile; closing it is what makes the cookies readable.
+async function dlIgSignIn(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Opening…';
+  try {
+    const res = await fetch('/api/dl/session/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site: 'instagram' }),
+    });
+    const json = await res.json();
+    if (json.status !== 'ok') return dlShowError(json.status_message || 'Could not open a browser.');
+
+    dl.ig.insertAdjacentHTML('beforeend', `
+      <div class="dl-ig-row dl-ig-waiting">
+        <span>Sign in to Instagram in the window that opened, then come back.</span>
+        <button class="btn btn-primary" type="button" data-ig-done>I have signed in</button>
+      </div>`);
+  } catch {
+    dlShowError('Could not reach the server.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in to Instagram';
+  }
+}
+
+// The close is the point: a running browser keeps its cookie store locked.
+async function dlIgDone(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Closing the window…';
+  try {
+    const res = await fetch('/api/dl/session/close', { method: 'POST' });
+    const json = await res.json();
+    if (json.status === 'ok' && json.data.signedIn) {
+      if (dl.cookies) { dl.cookies.value = 'session'; dlSyncCookieUi(); dlSavePrefs(); }
+      await dlInspect(dl.url.value.trim());
+    } else {
+      dlShowError('No session was saved. Sign in fully, then try again.');
+    }
+  } catch {
+    dlShowError('Could not reach the server.');
+  }
+}
+
+// Typing a URL is a stream of keystrokes; only the pause at the end is a
+// question worth asking the server.
+let dlInspectTimer = null;
+function dlDebouncedInspect() {
+  clearTimeout(dlInspectTimer);
+  const raw = dl.url.value.trim();
+  dlInspectTimer = setTimeout(() => dlInspect(raw), 300);
+}
+
 const dlCookieChoice = () => (dl.cookies ? dl.cookies.value : '');
 const dlCookieFile = () => (dl.cookieFile ? dl.cookieFile.value.trim() : '');
 
@@ -540,6 +645,14 @@ export const tool = {
     panel.innerHTML = TEMPLATE;
     cacheEls();
     bindDownloader();
+    dl.url.addEventListener('input', dlDebouncedInspect);
+    dl.ig.addEventListener('click', (e) => {
+      const signin = e.target.closest('[data-ig-signin]');
+      if (signin) return dlIgSignIn(signin);
+      const done = e.target.closest('[data-ig-done]');
+      if (done) return dlIgDone(done);
+    });
+
     dlLoadPrefs();
     if (dl.cookies) {
       dl.cookies.addEventListener('change', () => { dlSyncCookieUi(); dlSavePrefs(); });
