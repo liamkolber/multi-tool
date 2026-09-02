@@ -259,6 +259,13 @@ function dlRenderProbe() {
 let dlIg = null;
 
 async function dlInspect(raw) {
+  // The card below belongs to whatever was fetched last. Once the box holds a
+  // different link it is stale, and leaving it there reads as though that is
+  // what was found — a YouTube video sitting under an Instagram link.
+  if (dlInfo && dlInfo.url !== raw) {
+    dl.probe.hidden = true;
+    dlInfo = null;
+  }
   if (!raw) { dl.ig.hidden = true; dlIg = null; return; }
   try {
     const res = await fetch(`/api/dl/inspect?url=${encodeURIComponent(raw)}`);
@@ -292,9 +299,12 @@ function dlRenderIg() {
     </div>
     ${canFetch ? `<div class="dl-ig-row">
       ${dlIg.signedIn
-    ? `<span class="dl-ig-ok">Signed in — this link will use that session.</span>
+    // "A session is saved", not "signed in": all the server can see is that a
+    // cookie store exists, and merely opening the login page creates one.
+    // Whether the login took is something only the fetch can prove.
+    ? `<span class="dl-ig-ok">A session is saved — this link will use it.</span>
          <button class="btn-ghost" type="button" data-ig-signin>Sign in again</button>`
-    : `<span class="dl-ig-warn">Not signed in. Instagram will refuse this without a session.</span>
+    : `<span class="dl-ig-warn">No session saved. Instagram will refuse this without one.</span>
          <button class="btn btn-primary" type="button" data-ig-signin>Sign in to Instagram</button>`}
     </div>` : ''}`;
 }
