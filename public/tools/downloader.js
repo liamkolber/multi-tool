@@ -268,6 +268,7 @@ async function dlInspect(raw) {
     dl.probe.hidden = true;
     dlInfo = null;
   }
+  dlIgItems = null;
   if (!raw) { dl.ig.hidden = true; dlIg = null; return; }
   try {
     const res = await fetch(`/api/dl/inspect?url=${encodeURIComponent(raw)}`);
@@ -311,12 +312,97 @@ function dlRenderIg() {
     : `<span class="dl-ig-warn">No session saved. Instagram will refuse this without one.</span>
          <button class="btn btn-primary" type="button" data-ig-signin>Sign in to Instagram</button>`}
     </div>` : ''}
+    ${canFetch && dlIg.signedIn && !dlIgWaiting ? `<div class="dl-ig-row">
+      <button class="btn btn-primary" type="button" data-ig-media>${
+    ig.kind === 'profile' ? 'Find stories' : 'Find photos and video'}</button>
+      <span class="dl-ig-what">Instagram's own API — the only way to reach photos and albums.</span>
+    </div>` : ''}
+    <div id="dl-ig-media"></div>
     ${dlIgWaiting ? `<div class="dl-ig-row dl-ig-waiting">
       <span>A separate Instagram window is open — sign in there, then come back.
         It has to be its own window: Windows locks a running browser's cookies,
         so this one gets closed to read them.</span>
       <button class="btn-ghost" type="button" data-ig-done>Close it for me</button>
     </div>` : ''}`;
+}
+
+// What Instagram's API said is behind the link. yt-dlp is left to the videos,
+// where its quality options are worth having; everything else comes from here,
+// because yt-dlp simply refuses it.
+let dlIgItems = null;
+
+async function dlIgFindMedia(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Asking Instagram…';
+  try {
+    const res = await fetch(`/api/dl/ig/media?url=${encodeURIComponent(dl.url.value.trim())}`);
+    const json = await res.json();
+    if (json.status !== 'ok') {
+      dlIgItems = null;
+      dlRenderIgMedia();
+      return dlShowError(json.status_message || 'Instagram would not answer.');
+    }
+    dlClearError();
+    dlIgItems = json.data;
+    dlRenderIgMedia();
+  } catch {
+    dlShowError('Could not reach the server.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Find photos and video';
+  }
+}
+
+function dlRenderIgMedia() {
+  const box = document.getElementById('dl-ig-media');
+  if (!box) return;
+  if (!dlIgItems) { box.innerHTML = ''; return; }
+
+  const d = dlIgItems;
+  const rows = d.items.map((it) => `
+    <div class="dl-ig-item">
+      <span class="dl-ig-item-n">${it.index + 1}</span>
+      <span class="dl-ig-item-kind">${esc(it.kind)}</span>
+      <span class="dl-ig-item-dim">${it.width && it.height ? `${fmtNumber(it.width)}×${fmtNumber(it.height)}` : ''}</span>
+      <button class="btn-ghost" type="button" data-ig-get="${it.index}">Download</button>
+    </div>`).join('');
+
+  box.innerHTML = `
+    <div class="dl-ig-media">
+      <div class="dl-ig-row">
+        <strong>${esc(d.owner || 'instagram')}</strong>
+        <span class="dl-ig-what">${d.items.length} ${d.kind === 'stories' ? 'story item' : 'item'}${
+  d.items.length === 1 ? '' : 's'}${d.caption ? ` — ${esc(d.caption.slice(0, 60))}` : ''}</span>
+        ${d.items.length > 1 ? '<button class="btn btn-primary" type="button" data-ig-get="all">Download all</button>' : ''}
+      </div>
+      ${rows}
+    </div>`;
+}
+
+// Saved through the ordinary job list, so these land beside every other
+// download with the same progress and history.
+async function dlIgDownload(which) {
+  if (!dlIgItems) return;
+  const items = which === 'all' ? dlIgItems.items
+    : dlIgItems.items.filter((i) => String(i.index) === String(which));
+  if (!items.length) return;
+
+  try {
+    const res = await fetch('/api/dl/ig/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items,
+        owner: dlIgItems.owner,
+        label: dlIgItems.caption ? dlIgItems.caption.slice(0, 60) : dlIgItems.owner,
+      }),
+    });
+    const json = await res.json();
+    if (json.status !== 'ok') return dlShowError(json.status_message || 'Could not start that download.');
+    dlClearError();
+  } catch {
+    dlShowError('Could not reach the server.');
+  }
 }
 
 // Opens a browser window on the app's own profile. Signing in there leaves the
@@ -718,6 +804,12 @@ export const tool = {
     bindDownloader();
     dl.url.addEventListener('input', dlDebouncedInspect);
     dl.ig.addEventListener('click', (e) => {
+      const media = e.target.closest('[data-ig-media]');
+      if (media) return dlIgFindMedia(media);
+
+      const get = e.target.closest('[data-ig-get]');
+      if (get) return dlIgDownload(get.dataset.igGet);
+
       const signin = e.target.closest('[data-ig-signin]');
       if (signin) return dlIgSignIn(signin);
       const done = e.target.closest('[data-ig-done]');

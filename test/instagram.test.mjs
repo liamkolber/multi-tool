@@ -23,6 +23,13 @@ check('a reel', kind('https://www.instagram.com/reel/C8xYzAbC1de/') === 'post');
 check('igtv', kind('https://www.instagram.com/tv/C8xYzAbC1de/') === 'post');
 check('the code is carried through',
   classifyInstagram('https://www.instagram.com/p/C8xYzAbC1de/').code === 'C8xYzAbC1de');
+// A real share link carries far more than the shortcode after /p/, and the
+// whole segment fed to the base64 decoder is a 400 from Instagram.
+const long = classifyInstagram('https://www.instagram.com/p/DXvTML7DxBp3pcHH461HJmYQ5coZdRh34Os6ww0/');
+check('a long share link is trimmed to the 11-char shortcode',
+  long && long.code === 'DXvTML7DxBp', long && long.code);
+check('...and still reads as a post', long && long.kind === 'post');
+
 check('query strings and trailing slashes do not matter',
   kind('https://instagram.com/p/C8xYzAbC1de?igshid=abc') === 'post');
 

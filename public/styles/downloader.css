@@ -274,3 +274,21 @@
 .dl-ig-ok { color: var(--text); font-size: 13px; }
 .dl-ig-warn { color: #e0a060; font-size: 13px; }
 .dl-ig-waiting { border-top: 1px solid var(--border); padding-top: 9px; font-size: 13px; }
+
+/* --- Instagram media listing --- */
+.dl-ig-media { border-top: 1px solid var(--border); margin-top: 9px; padding-top: 9px; }
+.dl-ig-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.dl-ig-item + .dl-ig-item { border-top: 1px solid var(--border); }
+.dl-ig-item-n {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 18px;
+}
+.dl-ig-item-kind { color: var(--text); min-width: 48px; }
+.dl-ig-item-dim { color: var(--text-dim); flex: 1; font-variant-numeric: tabular-nums; }
