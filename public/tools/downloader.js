@@ -257,6 +257,8 @@ function dlRenderProbe() {
 // gets its own strip: what the link is, whether there is a session, and the
 // one action that link supports.
 let dlIg = null;
+// Whether a sign-in window is open and waiting to be confirmed.
+let dlIgWaiting = false;
 
 async function dlInspect(raw) {
   // The card below belongs to whatever was fetched last. Once the box holds a
@@ -292,12 +294,14 @@ function dlRenderIg() {
   const canFetch = ig.kind === 'post' || ig.kind === 'story' || ig.kind === 'profile';
 
   dl.ig.hidden = false;
+  // Rendered from state rather than appended to. Appending meant every click
+  // of Sign in stacked another "I have signed in" row on top of the last.
   dl.ig.innerHTML = `
     <div class="dl-ig-row">
       <span class="dl-ig-tag">Instagram</span>
       <span class="dl-ig-what">${esc(what)}</span>
     </div>
-    ${canFetch ? `<div class="dl-ig-row">
+    ${canFetch && !dlIgWaiting ? `<div class="dl-ig-row">
       ${dlIg.signedIn
     // "A session is saved", not "signed in": all the server can see is that a
     // cookie store exists, and merely opening the login page creates one.
@@ -306,6 +310,12 @@ function dlRenderIg() {
          <button class="btn-ghost" type="button" data-ig-signin>Sign in again</button>`
     : `<span class="dl-ig-warn">No session saved. Instagram will refuse this without one.</span>
          <button class="btn btn-primary" type="button" data-ig-signin>Sign in to Instagram</button>`}
+    </div>` : ''}
+    ${dlIgWaiting ? `<div class="dl-ig-row dl-ig-waiting">
+      <span>A separate Instagram window is open — sign in there, then come back.
+        It has to be its own window: Windows locks a running browser's cookies,
+        so this one gets closed to read them.</span>
+      <button class="btn btn-primary" type="button" data-ig-done>I have signed in</button>
     </div>` : ''}`;
 }
 
@@ -323,11 +333,8 @@ async function dlIgSignIn(btn) {
     const json = await res.json();
     if (json.status !== 'ok') return dlShowError(json.status_message || 'Could not open a browser.');
 
-    dl.ig.insertAdjacentHTML('beforeend', `
-      <div class="dl-ig-row dl-ig-waiting">
-        <span>Sign in to Instagram in the window that opened, then come back.</span>
-        <button class="btn btn-primary" type="button" data-ig-done>I have signed in</button>
-      </div>`);
+    dlIgWaiting = true;
+    dlRenderIg();
   } catch {
     dlShowError('Could not reach the server.');
   } finally {
@@ -345,12 +352,16 @@ async function dlIgDone(btn) {
     const json = await res.json();
     if (json.status === 'ok' && json.data.signedIn) {
       if (dl.cookies) { dl.cookies.value = 'session'; dlSyncCookieUi(); dlSavePrefs(); }
-      await dlInspect(dl.url.value.trim());
     } else {
       dlShowError('No session was saved. Sign in fully, then try again.');
     }
   } catch {
     dlShowError('Could not reach the server.');
+  } finally {
+    // Cleared whatever happened: the window is gone either way, so a row that
+    // still says one is open would be lying.
+    dlIgWaiting = false;
+    await dlInspect(dl.url.value.trim());
   }
 }
 
