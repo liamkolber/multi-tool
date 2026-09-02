@@ -331,6 +331,45 @@ function dlRenderIg() {
 // because yt-dlp simply refuses it.
 let dlIgItems = null;
 
+// Instagram's CDN goes through the server rather than straight into the page.
+// Its URLs are signed and might well load directly, but both CDNs the art tool
+// talks to refuse a browser while answering the server perfectly, and every
+// client-side fix for that looked right and failed. Relaying is verifiable.
+const dlIgSrc = (url) => `/api/dl/ig/preview?u=${encodeURIComponent(url)}`;
+
+// A photo full size, a video with controls, over the same relay. Escape or a
+// click on the surround closes it; the media itself does not.
+function dlIgView(index) {
+  const item = dlIgItems && dlIgItems.items.find((i) => String(i.index) === String(index));
+  if (!item) return;
+
+  const src = dlIgSrc(item.url);
+  const box = document.createElement('div');
+  box.className = 'dl-ig-viewer';
+  box.innerHTML = item.kind === 'video'
+    ? `<video src="${esc(src)}" controls autoplay playsinline></video>`
+    : `<img src="${esc(src)}" alt="" />`;
+
+  const shut = () => {
+    box.remove();
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const onKey = (e) => {
+    if (e.key !== 'Escape') return;
+    e.stopImmediatePropagation();
+    shut();
+  };
+
+  // Clicking the surround dismisses; the picture or player does not. The art
+  // viewer got this wrong by excluding the container rather than the media,
+  // which left almost nowhere that counted as backdrop.
+  box.addEventListener('click', (e) => {
+    if (!e.target.closest('img, video')) shut();
+  });
+  document.addEventListener('keydown', onKey, true);
+  document.body.appendChild(box);
+}
+
 async function dlIgFindMedia(btn) {
   btn.disabled = true;
   btn.textContent = 'Asking Instagram…';
@@ -362,6 +401,11 @@ function dlRenderIgMedia() {
   const rows = d.items.map((it) => `
     <div class="dl-ig-item">
       <span class="dl-ig-item-n">${it.index + 1}</span>
+      <button class="dl-ig-thumb" type="button" data-ig-view="${it.index}"
+        title="${it.kind === 'video' ? 'Play it' : 'View it full size'}">
+        <img src="${esc(dlIgSrc(it.url))}" alt="" loading="lazy" />
+        ${it.kind === 'video' ? '<span class="dl-ig-play">▶</span>' : ''}
+      </button>
       <span class="dl-ig-item-kind">${esc(it.kind)}</span>
       <span class="dl-ig-item-dim">${it.width && it.height ? `${fmtNumber(it.width)}×${fmtNumber(it.height)}` : ''}</span>
       <button class="btn-ghost" type="button" data-ig-get="${it.index}">Download</button>
@@ -806,6 +850,9 @@ export const tool = {
     dl.ig.addEventListener('click', (e) => {
       const media = e.target.closest('[data-ig-media]');
       if (media) return dlIgFindMedia(media);
+
+      const view = e.target.closest('[data-ig-view]');
+      if (view) return dlIgView(view.dataset.igView);
 
       const get = e.target.closest('[data-ig-get]');
       if (get) return dlIgDownload(get.dataset.igGet);

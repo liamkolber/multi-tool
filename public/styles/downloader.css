@@ -292,3 +292,52 @@
 }
 .dl-ig-item-kind { color: var(--text); min-width: 48px; }
 .dl-ig-item-dim { color: var(--text-dim); flex: 1; font-variant-numeric: tabular-nums; }
+
+/* --- Instagram previews --- */
+.dl-ig-thumb {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+  cursor: zoom-in;
+  flex: 0 0 auto;
+  transition: border-color 0.15s;
+}
+.dl-ig-thumb:hover { border-color: var(--accent); }
+.dl-ig-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dl-ig-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  font-size: 17px;
+  pointer-events: none;
+}
+
+/* The surround dismisses; the media itself does not. */
+.dl-ig-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  background: rgba(0, 0, 0, 0.93);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  cursor: zoom-out;
+}
+.dl-ig-viewer img,
+.dl-ig-viewer video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: default;
+}
