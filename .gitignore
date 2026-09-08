@@ -11,3 +11,4 @@ bin/
 .library-thumbs/
 .reddit.json
 .browser-session/
+.ig-users.json
