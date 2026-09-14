@@ -341,3 +341,79 @@
   border-radius: 4px;
   cursor: default;
 }
+
+/* --- YouTube comment search --- */
+.dl-comments {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+}
+.dl-c-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dl-c-title { font-size: 14px; }
+.dl-c-field { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12.5px; }
+.dl-c-field select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+  outline: none;
+}
+.dl-c-field select:focus { border-color: var(--accent); }
+.dl-c-hint { color: var(--text-dim); font-size: 12.5px; margin: 9px 0 0; }
+
+.dl-c-search { display: flex; align-items: center; gap: 10px; margin-top: 11px; }
+.dl-c-search input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+}
+.dl-c-search input:focus { border-color: var(--accent); }
+.dl-c-count { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+
+/* Capped so a thousand comments do not push the download list off the page. */
+.dl-c-list { max-height: 460px; overflow-y: auto; margin-top: 10px; }
+
+.dl-c-item { display: flex; gap: 10px; padding: 9px 0; }
+.dl-c-item + .dl-c-item { border-top: 1px solid var(--border); }
+.dl-c-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+  background: var(--surface);
+  display: block;
+}
+.dl-c-body { min-width: 0; flex: 1; }
+.dl-c-meta { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.dl-c-author { color: var(--text); font-weight: 600; text-decoration: none; }
+.dl-c-author:hover { color: var(--accent); }
+.dl-c-when, .dl-c-likes { color: var(--text-dim); }
+.dl-c-badge {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 10px;
+  padding: 1px 7px;
+}
+.dl-c-badge.up { border-color: var(--accent); color: var(--text); }
+.dl-c-text {
+  font-size: 13.5px;
+  line-height: 1.5;
+  margin-top: 3px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dl-c-text mark { background: var(--accent); color: #fff; border-radius: 3px; padding: 0 2px; }

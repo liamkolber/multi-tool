@@ -37,6 +37,7 @@ const TEMPLATE = `
   </form>
 
   <div id="dl-ig" class="dl-ig" hidden></div>
+  <div id="dl-comments" class="dl-comments" hidden></div>
   <div id="dl-error" class="dl-notice error" hidden></div>
   <div id="dl-probe" class="dl-probe" hidden></div>
 
@@ -56,6 +57,7 @@ function cacheEls() {
   cookies: $('dl-cookies'),
   cookieFile: $('dl-cookie-file'),
   ig: $('dl-ig'),
+  comments: $('dl-comments'),
   fetchBtn: $('dl-fetch'),
   tools: $('dl-tools'),
   error: $('dl-error'),
@@ -266,6 +268,146 @@ function dlRenderProbe() {
 }
 
 // The container preference is worth keeping across refreshes.
+// --- YouTube comments ---
+//
+// Fetched once, searched in the browser. Pulling them costs seconds, so asking
+// YouTube again on every keystroke would be absurd; the whole batch comes over
+// at once and the search runs against what is already here.
+const DL_COMMENT_LIMITS = [100, 250, 500, 1000];
+let dlComments = null;     // the fetched batch
+let dlCommentQuery = '';
+let dlCommentBusy = false;
+
+const dlIsYouTube = (raw) => {
+  try {
+    return /(^|\.)(youtube\.com|youtu\.be|youtube-nocookie\.com)$/i.test(new URL(raw).hostname);
+  } catch {
+    return false;
+  }
+};
+
+function dlRenderComments() {
+  const url = dl.url.value.trim();
+  if (!dlIsYouTube(url)) { dl.comments.hidden = true; return; }
+  dl.comments.hidden = false;
+
+  const limit = (dlComments && dlComments.limit) || DL_COMMENT_LIMITS[0];
+  const sort = (dlComments && dlComments.sort) || 'top';
+
+  const head = `
+    <div class="dl-c-bar">
+      <strong class="dl-c-title">Comments</strong>
+      <label class="dl-c-field"><span>How many</span>
+        <select id="dl-c-limit">${DL_COMMENT_LIMITS.map((n) => (
+    `<option value="${n}"${n === limit ? ' selected' : ''}>${fmtNumber(n)}</option>`)).join('')}</select>
+      </label>
+      <label class="dl-c-field"><span>Order</span>
+        <select id="dl-c-sort">
+          <option value="top"${sort === 'top' ? ' selected' : ''}>Top</option>
+          <option value="new"${sort === 'new' ? ' selected' : ''}>Newest</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" type="button" data-dl-c-load ${dlCommentBusy ? 'disabled' : ''}>${
+  dlCommentBusy ? 'Reading…' : (dlComments ? 'Reload' : 'Load comments')}</button>
+    </div>`;
+
+  if (!dlComments) {
+    dl.comments.innerHTML = head + `<p class="dl-c-hint">Pulling a thousand takes a while; a
+      hundred is quick. They are fetched once and searched here, so only the first load waits.</p>`;
+    return;
+  }
+
+  const matches = dlCommentMatches();
+  dl.comments.innerHTML = head + `
+    <div class="dl-c-search">
+      <input id="dl-c-q" type="search" placeholder="Search these comments…"
+        value="${esc(dlCommentQuery)}" autocomplete="off" />
+      <span class="dl-c-count">${
+  dlCommentQuery
+    ? `${fmtNumber(matches.length)} of ${fmtNumber(dlComments.comments.length)}`
+    : `${fmtNumber(dlComments.comments.length)} loaded${dlComments.capped ? ' (the cap — there may be more)' : ''}`
+}</span>
+    </div>
+    <div class="dl-c-list">${matches.length
+    ? matches.map(dlCommentHtml).join('')
+    : '<p class="dl-c-hint">Nothing matches that.</p>'}</div>`;
+}
+
+// Author as well as text: looking for what one person said is as common as
+// looking for a phrase.
+function dlCommentMatches() {
+  if (!dlComments) return [];
+  const q = dlCommentQuery.trim().toLowerCase();
+  if (!q) return dlComments.comments;
+  return dlComments.comments.filter((c) => c.text.toLowerCase().includes(q)
+    || c.author.toLowerCase().includes(q));
+}
+
+// The matched run is marked so a hit is findable inside a long comment rather
+// than left for the eye to hunt.
+function dlHighlight(text) {
+  const q = dlCommentQuery.trim();
+  if (!q) return esc(text);
+  const at = text.toLowerCase().indexOf(q.toLowerCase());
+  if (at < 0) return esc(text);
+  return esc(text.slice(0, at))
+    + `<mark>${esc(text.slice(at, at + q.length))}</mark>`
+    + esc(text.slice(at + q.length));
+}
+
+function dlCommentHtml(c) {
+  const badges = [
+    c.pinned ? '<span class="dl-c-badge">pinned</span>' : '',
+    c.byUploader ? '<span class="dl-c-badge up">creator</span>' : '',
+    c.verified ? '<span class="dl-c-badge">verified</span>' : '',
+  ].join('');
+
+  return `
+    <div class="dl-c-item">
+      ${c.avatar ? `<img class="dl-c-avatar" src="${esc(c.avatar)}" alt="" loading="lazy"
+        referrerpolicy="no-referrer" />` : '<span class="dl-c-avatar"></span>'}
+      <div class="dl-c-body">
+        <div class="dl-c-meta">
+          ${c.authorUrl
+    ? `<a class="dl-c-author" href="${esc(c.authorUrl)}" target="_blank" rel="noopener noreferrer">${esc(c.author)}</a>`
+    : `<span class="dl-c-author">${esc(c.author)}</span>`}
+          ${badges}
+          <span class="dl-c-when">${esc(c.timeText || '')}</span>
+          ${c.likes ? `<span class="dl-c-likes">${fmtNumber(c.likes)} likes</span>` : ''}
+        </div>
+        <div class="dl-c-text">${dlHighlight(c.text)}</div>
+      </div>
+    </div>`;
+}
+
+async function dlLoadComments() {
+  const url = dl.url.value.trim();
+  if (!dlIsYouTube(url) || dlCommentBusy) return;
+
+  const limitEl = $('dl-c-limit');
+  const sortEl = $('dl-c-sort');
+  const limit = limitEl ? limitEl.value : DL_COMMENT_LIMITS[0];
+  const sort = sortEl ? sortEl.value : 'top';
+
+  dlCommentBusy = true;
+  dlRenderComments();
+  try {
+    const res = await fetch(`/api/dl/comments?url=${encodeURIComponent(url)}&limit=${limit}&sort=${sort}`);
+    const json = await res.json();
+    if (json.status !== 'ok') {
+      dlComments = null;
+      return dlShowError(json.status_message || 'Could not read those comments.');
+    }
+    dlClearError();
+    dlComments = { ...json.data, url };
+  } catch {
+    dlShowError('Could not reach the server.');
+  } finally {
+    dlCommentBusy = false;
+    dlRenderComments();
+  }
+}
+
 // --- Instagram ---
 // Instagram answers almost nothing to a signed-out request, so a link to it
 // gets its own strip: what the link is, whether there is a session, and the
@@ -283,6 +425,15 @@ async function dlInspect(raw) {
     dlInfo = null;
   }
   dlIgItems = null;
+
+  // The batch in hand belongs to whatever was loaded; a new link invalidates
+  // it, and leaving it on screen would attach one video's comments to another.
+  if (dlComments && dlComments.url !== raw) {
+    dlComments = null;
+    dlCommentQuery = '';
+  }
+  dlRenderComments();
+
   if (!raw) { dl.ig.hidden = true; dlIg = null; return; }
   try {
     const res = await fetch(`/api/dl/inspect?url=${encodeURIComponent(raw)}`);
@@ -859,6 +1010,24 @@ export const tool = {
     cacheEls();
     bindDownloader();
     dl.url.addEventListener('input', dlDebouncedInspect);
+    // Searching is local, so it can run on every keystroke; only the initial
+    // load talks to YouTube.
+    dl.comments.addEventListener('input', (e) => {
+      if (!e.target.closest('#dl-c-q')) return;
+      dlCommentQuery = e.target.value;
+      const box = e.target;
+      const at = box.selectionStart;
+      dlRenderComments();
+      // Re-rendering replaces the box, so the caret has to be put back or
+      // typing jumps to the start after the first character.
+      const again = $('dl-c-q');
+      if (again) { again.focus(); again.setSelectionRange(at, at); }
+    });
+
+    dl.comments.addEventListener('click', (e) => {
+      if (e.target.closest('[data-dl-c-load]')) dlLoadComments();
+    });
+
     dl.ig.addEventListener('click', (e) => {
       const media = e.target.closest('[data-ig-media]');
       if (media) return dlIgFindMedia(media);
