@@ -417,3 +417,16 @@
   overflow-wrap: anywhere;
 }
 .dl-c-text mark { background: var(--accent); color: #fff; border-radius: 3px; padding: 0 2px; }
+
+/* Progress while a long comment fetch runs, and the next-tier control. */
+.dl-c-progress { color: var(--text-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.dl-c-more {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.dl-c-more .dl-c-hint { margin: 0; flex: 1 1 260px; }

@@ -37,9 +37,9 @@ const TEMPLATE = `
   </form>
 
   <div id="dl-ig" class="dl-ig" hidden></div>
-  <div id="dl-comments" class="dl-comments" hidden></div>
   <div id="dl-error" class="dl-notice error" hidden></div>
   <div id="dl-probe" class="dl-probe" hidden></div>
+  <div id="dl-comments" class="dl-comments" hidden></div>
 
   <div class="dl-jobs-head">
     <h2 id="dl-jobs-title" class="dl-h2" hidden>Downloads</h2>
@@ -185,6 +185,7 @@ async function dlDoProbe(e) {
     }
     dlInfo = json.data;
     dlRenderProbe();
+    dlRenderComments();
   } catch {
     dlShowError('Could not reach the server.');
   } finally {
@@ -273,7 +274,16 @@ function dlRenderProbe() {
 // Fetched once, searched in the browser. Pulling them costs seconds, so asking
 // YouTube again on every keystroke would be absurd; the whole batch comes over
 // at once and the search runs against what is already here.
-const DL_COMMENT_LIMITS = [100, 250, 500, 1000];
+// Roughly fifty a second, measured. "all" is offered because it is what you
+// actually want on a video with a few thousand, and warned about because on a
+// video with a hundred thousand it is half an hour.
+const DL_COMMENT_LIMITS = [100, 500, 1000, 2500, 5000, 'all'];
+const DL_COMMENTS_PER_SEC = 50;
+
+// What the picker is set to before anything has been loaded, and how far a
+// running fetch has got.
+let dlCommentWanted = DL_COMMENT_LIMITS[0];
+let dlCommentSeen = null;
 let dlComments = null;     // the fetched batch
 let dlCommentQuery = '';
 let dlCommentBusy = false;
@@ -287,12 +297,14 @@ const dlIsYouTube = (raw) => {
 };
 
 function dlRenderComments() {
-  const url = dl.url.value.trim();
-  if (!dlIsYouTube(url)) { dl.comments.hidden = true; return; }
+  // Tied to what was fetched, not to what is typed: this sits under the
+  // result, so it appears once there is a result to sit under.
+  if (!dlInfo || !dlIsYouTube(dlInfo.url || '')) { dl.comments.hidden = true; return; }
   dl.comments.hidden = false;
 
-  const limit = (dlComments && dlComments.limit) || DL_COMMENT_LIMITS[0];
+  const limit = (dlComments && dlComments.limit) || dlCommentWanted;
   const sort = (dlComments && dlComments.sort) || 'top';
+  const est = limit === 'all' ? null : Math.round(Number(limit) / DL_COMMENTS_PER_SEC);
 
   const head = `
     <div class="dl-c-bar">
@@ -309,11 +321,16 @@ function dlRenderComments() {
       </label>
       <button class="btn btn-primary" type="button" data-dl-c-load ${dlCommentBusy ? 'disabled' : ''}>${
   dlCommentBusy ? 'Reading…' : (dlComments ? 'Reload' : 'Load comments')}</button>
+      ${dlCommentBusy && dlCommentSeen != null
+    ? `<span class="dl-c-progress">${fmtNumber(dlCommentSeen)} so far…</span>` : ''}
     </div>`;
 
   if (!dlComments) {
-    dl.comments.innerHTML = head + `<p class="dl-c-hint">Pulling a thousand takes a while; a
-      hundred is quick. They are fetched once and searched here, so only the first load waits.</p>`;
+    dl.comments.innerHTML = head + `<p class="dl-c-hint">${
+  limit === 'all'
+    ? 'Everything, however many that is — fine for a few thousand, half an hour for a hundred thousand.'
+    : `About ${est < 60 ? `${est} seconds` : `${Math.round(est / 60)} minutes`} at the rate YouTube hands them over.`
+} Fetched once and searched here, so only the load waits.</p>`;
     return;
   }
 
@@ -324,13 +341,33 @@ function dlRenderComments() {
         value="${esc(dlCommentQuery)}" autocomplete="off" />
       <span class="dl-c-count">${
   dlCommentQuery
-    ? `${fmtNumber(matches.length)} of ${fmtNumber(dlComments.comments.length)}`
-    : `${fmtNumber(dlComments.comments.length)} loaded${dlComments.capped ? ' (the cap — there may be more)' : ''}`
+    ? `${fmtNumber(matches.length)} of ${fmtNumber(dlComments.comments.length)} searched`
+    // The video's own total, which yt-dlp reports while it works. Saying
+    // "500 searched" alone reads as though that were all there is; "of ~2.4M"
+    // is the difference between a complete search and a sample.
+    : `${fmtNumber(dlComments.comments.length)} loaded${
+      dlComments.total ? ` of ~${fmtNumber(dlComments.total)}` : ''}`
 }</span>
     </div>
     <div class="dl-c-list">${matches.length
     ? matches.map(dlCommentHtml).join('')
-    : '<p class="dl-c-hint">Nothing matches that.</p>'}</div>`;
+    : '<p class="dl-c-hint">Nothing matches that.</p>'}</div>
+    ${dlComments.capped && dlNextLimit() ? `<div class="dl-c-more">
+      <button class="btn-ghost" type="button" data-dl-c-more ${dlCommentBusy ? 'disabled' : ''}>Search ${
+  dlNextLimit() === 'all' ? 'all of them' : `the first ${fmtNumber(dlNextLimit())}`}</button>
+      <span class="dl-c-hint">This one stopped at the cap, so there is more past it. Fetching
+        starts from the beginning again — YouTube has no way to resume — so the search then
+        covers the whole larger batch rather than only the new part.</span>
+    </div>` : ''}
+    ${dlComments.complete ? '<p class="dl-c-hint">That is every comment on the video.</p>' : ''}`;
+}
+
+// The next size up from whatever is loaded. Cumulative rather than paged:
+// yt-dlp cannot start partway through, so a bigger ask refetches from the top
+// and the result contains everything seen before plus more.
+function dlNextLimit() {
+  const at = DL_COMMENT_LIMITS.indexOf(dlComments ? dlComments.limit : DL_COMMENT_LIMITS[0]);
+  return at >= 0 && at < DL_COMMENT_LIMITS.length - 1 ? DL_COMMENT_LIMITS[at + 1] : null;
 }
 
 // Author as well as text: looking for what one person said is as common as
@@ -380,19 +417,37 @@ function dlCommentHtml(c) {
     </div>`;
 }
 
-async function dlLoadComments() {
-  const url = dl.url.value.trim();
-  if (!dlIsYouTube(url) || dlCommentBusy) return;
+async function dlLoadComments(want) {
+  const url = dlInfo && dlInfo.url;
+  if (!url || !dlIsYouTube(url) || dlCommentBusy) return;
 
   const limitEl = $('dl-c-limit');
   const sortEl = $('dl-c-sort');
-  const limit = limitEl ? limitEl.value : DL_COMMENT_LIMITS[0];
+  const limit = want != null ? want : (limitEl ? limitEl.value : DL_COMMENT_LIMITS[0]);
   const sort = sortEl ? sortEl.value : 'top';
+  dlCommentWanted = String(limit) === 'all' ? 'all' : Number(limit);
 
+  // The server counts them off against this token; the browser reads that
+  // count while it waits.
+  const token = `c${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
   dlCommentBusy = true;
+  dlCommentSeen = 0;
   dlRenderComments();
+
+  const watch = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/dl/comments/progress?token=${encodeURIComponent(token)}`);
+      const j = await r.json();
+      if (j.status === 'ok' && j.data.seen != null) {
+        dlCommentSeen = j.data.seen;
+        dlRenderComments();
+      }
+    } catch { /* the fetch itself is what matters */ }
+  }, 1000);
+
   try {
-    const res = await fetch(`/api/dl/comments?url=${encodeURIComponent(url)}&limit=${limit}&sort=${sort}`);
+    const res = await fetch(`/api/dl/comments?url=${encodeURIComponent(url)}&limit=${
+      encodeURIComponent(limit)}&sort=${sort}&token=${encodeURIComponent(token)}`);
     const json = await res.json();
     if (json.status !== 'ok') {
       dlComments = null;
@@ -403,7 +458,9 @@ async function dlLoadComments() {
   } catch {
     dlShowError('Could not reach the server.');
   } finally {
+    clearInterval(watch);
     dlCommentBusy = false;
+    dlCommentSeen = null;
     dlRenderComments();
   }
 }
@@ -431,6 +488,7 @@ async function dlInspect(raw) {
   if (dlComments && dlComments.url !== raw) {
     dlComments = null;
     dlCommentQuery = '';
+    dlCommentWanted = DL_COMMENT_LIMITS[0];
   }
   dlRenderComments();
 
@@ -1025,7 +1083,8 @@ export const tool = {
     });
 
     dl.comments.addEventListener('click', (e) => {
-      if (e.target.closest('[data-dl-c-load]')) dlLoadComments();
+      if (e.target.closest('[data-dl-c-load]')) return dlLoadComments();
+      if (e.target.closest('[data-dl-c-more]')) return dlLoadComments(dlNextLimit());
     });
 
     dl.ig.addEventListener('click', (e) => {
