@@ -311,7 +311,11 @@ function dlRenderComments() {
       <strong class="dl-c-title">Comments</strong>
       <label class="dl-c-field"><span>How many</span>
         <select id="dl-c-limit">${DL_COMMENT_LIMITS.map((n) => (
-    `<option value="${n}"${n === limit ? ' selected' : ''}>${fmtNumber(n)}</option>`)).join('')}</select>
+    // 'all' is a real entry in this list, and fmtNumber turns it into NaN.
+    // Compared as strings too, since the value arrives from a <select> as text
+    // one way and from the server as a number the other.
+    `<option value="${n}"${String(n) === String(limit) ? ' selected' : ''}>${
+      n === 'all' ? 'Everything' : fmtNumber(n)}</option>`)).join('')}</select>
       </label>
       <label class="dl-c-field"><span>Order</span>
         <select id="dl-c-sort">
